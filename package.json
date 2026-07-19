@@ -1,0 +1,26 @@
+{
+  "name": "perfeccity",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PERFECCITY MVP — Deterministic decision platform for wall-design consultation, quotation, and manufacturing",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:consultant": "npm run dev --workspace=apps/consultant",
+    "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:designer": "npm run dev --workspace=apps/designer",
+    "dev:customer": "npm run dev --workspace=apps/customer",
+    "test:config-engine": "npm test --workspace=packages/config-engine",
+    "test:quotation-engine": "npm test --workspace=packages/quotation-engine",
+    "test": "npm test --workspaces --if-present",
+    "db:migrate": "supabase db push",
+    "db:reset": "supabase db reset",
+    "db:seed": "supabase db seed",
+    "types:generate": "supabase gen types typescript --local > packages/shared-types/src/database.types.ts"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

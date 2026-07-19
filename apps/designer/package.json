@@ -1,0 +1,6 @@
+{
+  "name": "@perfeccity/designer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Designer GLB/BOM authoring app — desktop-first, 1280px minimum"
+}

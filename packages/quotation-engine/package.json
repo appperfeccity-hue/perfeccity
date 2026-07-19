@@ -1,0 +1,12 @@
+{
+  "name": "@perfeccity/quotation-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "13-step deterministic quotation engine + SHA-256 seal logic",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest --run"
+  }
+}

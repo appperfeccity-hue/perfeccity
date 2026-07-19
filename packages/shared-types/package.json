@@ -1,0 +1,11 @@
+{
+  "name": "@perfeccity/shared-types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generated Supabase types + shared enums/DTOs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  }
+}
