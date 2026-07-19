@@ -77,6 +77,12 @@ Checked for contradictions or unintended coupling between all 18 decisions:
 
 No contradictions found. No reversals needed.
 
+**Sprint 3 honest assessment:**
+- Test specs (T9) are AUTHORED (assertions documented) but NOT EXECUTED (no live infra in this sandbox, placeholder bodies only)
+- "0 bugs found" means "0 bugs found via conversational Q&A + checklist" — NOT "0 bugs found by running tests"
+- The checklist addresses STRUCTURAL correctness (grants, atomicity, FKs) — Sprint 4 needs COMPUTATIONAL correctness verification (golden fixtures, formula tests, hash determinism) which the current 7-category checklist does not cover
+- Sprint 4 must define its own verification model BEFORE writing engine code
+
 ---
 
 ## Pending (Future Sprints)
