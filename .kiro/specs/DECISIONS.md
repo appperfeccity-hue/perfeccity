@@ -90,12 +90,11 @@ No contradictions found. No reversals needed.
 _Decisions that are expected to be needed but haven't been made yet._
 
 - **Sprint 3:** `payment_method_enum` — whether to add `NET_BANKING`/`EMI` (Part 15, item 7)
-- **Sprint 4:** Stage 4 resubmission after downstream data exists — `replace_project_spaces`
-  RPC will FK-fail once `space_configurations`/`space_measurements`/`configured_furniture`
-  reference spaces. Options: (a) block Stage 4 resubmission when `consultation_stages`
-  stage 5+ has status != PENDING, or (b) cascade-delete child data in the RPC, or
-  (c) soft-delete spaces and create new ones. Decision must be made before Sprint 4
-  implements Stage 5 (template selection writes `selected_template_id` on spaces).
+- **Sprint 4:** Stage 4 resubmission after downstream data exists — **RESOLVED in Sprint 4 T0:**
+  `replace_project_spaces` RPC now checks for child rows before DELETE. If any
+  space has `space_configurations`, `space_measurements`, `configured_furniture`, or
+  `space_design_overrides` rows → `422 SPACES_LOCKED_BY_CONFIGURATION`. Stage 4
+  is only re-submittable while spaces are "clean" (pre-Stage-5).
 - **Sprint 6:** Customer RLS via `customer_accounts.auth_user_id` — exact policy shape
   depends on how customer project links are populated during the convert flow
 - **Sprint 6:** Convert flow MUST use compensating-delete pattern for customer Auth +

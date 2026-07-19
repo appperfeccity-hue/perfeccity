@@ -158,6 +158,15 @@ export async function handleStage4(
         422, 'space_type'
       );
     }
+    // AD-19 resolution (Sprint 4 T0): spaces locked once downstream data exists
+    if (rpcError.message?.includes('SPACES_LOCKED_BY_CONFIGURATION')) {
+      return error(
+        'SPACES_LOCKED',
+        'Spaces cannot be modified after configuration has started (Stage 5+). ' +
+        'To change spaces, the project must be reset.',
+        422, 'spaces'
+      );
+    }
     // ⚠️ CO-MAINTENANCE: error messages from replace_project_spaces RPC
     console.error('Stage 4 replace_project_spaces RPC failed:', rpcError);
     return error('DB_ERROR', 'Failed to save spaces: ' + rpcError.message, 500);
