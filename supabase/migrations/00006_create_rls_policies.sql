@@ -88,6 +88,15 @@ $$;
 -- not fail SAFE (no rows). This is a security-critical step, not optional.
 -- ============================================================
 
+-- anon grant rationale: auth.user_role() and auth.user_id() are granted to anon
+-- because they may be referenced in policy evaluation paths even for unauthenticated
+-- requests (e.g. if a public-facing table is ever added). For anon callers:
+-- - auth.uid() returns NULL
+-- - any policy comparing NULL = column evaluates to FALSE (row excluded)
+-- - this is correct deny behavior, not a bug masking access
+-- If a future policy needs anon SELECT (e.g. published templates for anonymous
+-- browsing), it should check status = 'PUBLISHED' directly without calling
+-- auth.user_role() at all. The anon grant is harmless but worth documenting.
 GRANT EXECUTE ON FUNCTION auth.user_role() TO authenticated, anon, service_role;
 GRANT EXECUTE ON FUNCTION auth.user_id() TO authenticated, anon, service_role;
 GRANT EXECUTE ON FUNCTION auth.consultant_project_ids() TO authenticated, service_role;

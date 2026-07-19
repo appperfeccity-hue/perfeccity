@@ -28,13 +28,21 @@ api_url = "http://127.0.0.1"
 enabled = true
 site_url = "http://127.0.0.1:3000"
 additional_redirect_urls = ["https://127.0.0.1:3000"]
-jwt_expiry = 900
+jwt_expiry = 900  # AD-1: 15min, overrides Supabase default 3600s. Trade-off documented in DECISIONS.md.
 enable_signup = true
 
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
 enable_confirmations = false
+
+# AD-7: Custom Access Token Hook — injects role from public.users into app_metadata.
+# WITHOUT THIS SECTION, the hook function (00007_create_auth_hook.sql) exists but is
+# NEVER CALLED. Tokens will silently lack the role claim and all RLS policies fail.
+# For hosted environments, this must ALSO be configured in Dashboard → Auth → Hooks.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/auth/custom_access_token_hook"
 
 [storage]
 enabled = true
