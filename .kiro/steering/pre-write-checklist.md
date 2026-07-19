@@ -52,6 +52,17 @@ Every item here was caught in review at least once. Apply these checks
 - [ ] Response matches the envelope shape (`{data, errors}` / `{data, pagination}`)
 - [ ] Error codes are distinct (not generic 500 for all failures)
 
+## For any propose→approve/reject workflow (state machine with separate actors):
+
+- [ ] **Self-approval guard** — can the same user who proposed/created a row also approve it?
+  - RLS role-gating alone doesn't prevent this (a user with both DESIGNER and ADMIN roles, or a single test account)
+  - Check the spec (Part 4, Part 9) for whether self-approval is explicitly disallowed
+  - If disallowed: enforce at the DB/RPC layer (`proposed_by != approver_id`), not just UI
+  - If allowed (e.g., Admin direct-creates a SKU without a proposal): document as an explicit decision
+  - Document as AD-N either way — the decision matters more than the answer
+- [ ] **State machine completeness** — every status must have documented transitions (from → to), and the endpoint must reject undocumented transitions with a distinct error code
+- [ ] **Creator editability** — can the creator edit after submission? If yes, only in specific statuses (e.g., DRAFT, REJECTED)? Enforce at RLS layer, not just endpoint
+
 ## General:
 
 - [ ] New AD entry in DECISIONS.md for any non-trivial design choice
