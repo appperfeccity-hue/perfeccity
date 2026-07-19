@@ -41,7 +41,11 @@ Checked for contradictions or unintended coupling between all 18 decisions:
 
 - **AD-7 × AD-9:** Intentionally coupled. Unregistered hook + no user_metadata fallback = fail closed (all access denied). AD-7's negative test catches this pre-deployment.
 - **AD-13 × AD-14:** Both hit Postgres per login (~3 round trips total). MVP-acceptable latency.
-- **AD-2 × AD-3:** Asymmetry — staff use `user_id = auth.uid()` directly; customers use a separate `auth_user_id` column. Sprint 6 customer RLS needs its own helper (noted in Pending), not `auth.consultant_project_ids()`.
+- **AD-2 × AD-3:** Asymmetry — staff use `user_id = auth.uid()` directly; customers use a separate `auth_user_id` column. This creates two different patterns:
+  - Staff: `auth.uid()` → look up `users` → done (one hop)
+  - Customer: `auth.uid()` → look up `customer_accounts` via `auth_user_id` → done (one hop, but different column name)
+  - Sprint 6's customer RLS needs its own helper function (not reusable from `auth.consultant_project_ids()`)
+  - **Critical Sprint 6 dependency:** the convert flow MUST populate `customer_accounts.auth_user_id` atomically with Auth user creation (same compensating-delete pattern as T2). If `auth_user_id` is NULL, T4's login query (`.eq('auth_user_id', auth_uid)`) won't match the row, and the customer gets `403 ACCOUNT_NOT_FOUND` despite having a valid account row linked by `lead_id`. This is the same partial-failure category as T2 — needs the same rigor.
 - **AD-2 × AD-5:** RPC stores `p_manager_id` from the Edge Function's `rbac.auth.userId`, which equals `auth.uid()` (AD-2). Consistent only if all staff are created via T2. Protected by AD-15's invariant ("Auth users created outside T2 is an operational error").
 - **AD-8 × AD-11:** Maintenance coupling — every new helper function needs a GRANT. Grows linearly with sprints. Documented in AD-11 trade-off.
 
@@ -56,3 +60,10 @@ _Decisions that are expected to be needed but haven't been made yet._
 - **Sprint 3:** `payment_method_enum` — whether to add `NET_BANKING`/`EMI` (Part 15, item 7)
 - **Sprint 6:** Customer RLS via `customer_accounts.auth_user_id` — exact policy shape
   depends on how customer project links are populated during the convert flow
+- **Sprint 6:** Convert flow MUST use compensating-delete pattern for customer Auth +
+  `customer_accounts.auth_user_id` population (same as T2's staff pattern). If Auth
+  user is created but `auth_user_id` isn't set on the `customer_accounts` row, T4's
+  login path returns `403 ACCOUNT_NOT_FOUND` with audit log entry — loud failure,
+  but confusing to the customer. The convert flow must not leave this column NULL.
+  T4 already handles this gracefully (distinct error code + audit log), but prevention
+  is better than detection.
