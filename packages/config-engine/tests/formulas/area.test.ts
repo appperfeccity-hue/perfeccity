@@ -43,19 +43,20 @@ describe('computeGrossArea', () => {
       expect(computeGrossArea('L_SHAPE', 2400, 2700, 800)).toBe(8640000);
     });
 
-    it('[SI-1] segment_b_mm=0 produces same as STRAIGHT', () => {
-      // SPEC-INTERPRETATION: Part 8 formula is (w×h) + (segment_b×h).
+    it('[SI-1 PENDING] segment_b_mm=0 produces same as STRAIGHT', () => {
+      // SPEC-INTERPRETATION [SI-1]: Part 8 formula is (w×h) + (segment_b×h).
       // With segment_b=0: (3000×2700) + (0×2700) = 8,100,000 + 0 = 8,100,000
       // Assumption: 0 is valid input (not rejected). A wall expressed as L_SHAPE
       // with zero-length second segment is geometrically straight.
-      // FLAG: If this interpretation is wrong, this expected value is wrong.
+      // STATUS: PENDING Akshay confirmation (Option A vs B).
+      // FLAG: If Option B is chosen, this test should REJECT 0 instead of accepting it.
       expect(computeGrossArea('L_SHAPE', 3000, 2700, 0)).toBe(8100000);
     });
 
-    it('[SI-1] segment_b_mm=null treated as 0', () => {
-      // SPEC-INTERPRETATION: Part 8 says "segment_b_mm is null/unused for STRAIGHT"
-      // but doesn't explicitly state behavior of null for L_SHAPE.
-      // Assumption: null treated as 0 (not as error). Same reasoning as SI-1.
+    it('[SI-1 PENDING] segment_b_mm=null treated as 0', () => {
+      // SPEC-INTERPRETATION [SI-1]: null treated as 0 for L_SHAPE.
+      // Assumption: null is valid (same reasoning as segment_b=0).
+      // STATUS: PENDING — same decision as SI-1 above.
       expect(computeGrossArea('L_SHAPE', 3000, 2700, null)).toBe(8100000);
     });
 
