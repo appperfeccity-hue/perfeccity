@@ -171,6 +171,15 @@ describe('Integration: 3-Space Regression Fixture', () => {
       expect(result.configuration_hash).toMatch(/^[0-9a-f]{64}$/);
     });
 
+    it('configuration_hash matches FROZEN baseline (Gate 1)', async () => {
+      // FROZEN at Sprint 4 completion. Any change to this value is a REGRESSION.
+      // Re-baseline requires documented justification in DECISIONS.md.
+      const result = await runConfigurationEngine(SPACE_1_INPUT);
+      expect(result.configuration_hash).toBe(
+        'f8156a7e77a3f6dd0ec3df6b4bb9be6ed811ec488d2f9c904d5618d11ed7810e'
+      );
+    });
+
     it('configuration_hash is deterministic (same input → same hash)', async () => {
       const result1 = await runConfigurationEngine(SPACE_1_INPUT);
       const result2 = await runConfigurationEngine(SPACE_1_INPUT);
@@ -259,6 +268,19 @@ describe('Integration: 3-Space Regression Fixture', () => {
       expect(r1.configuration_hash).not.toBe(r2.configuration_hash);
       expect(r1.configuration_hash).not.toBe(r3.configuration_hash);
       expect(r2.configuration_hash).not.toBe(r3.configuration_hash);
+    });
+
+    it('FROZEN baselines for all 3 spaces (Gate 1 regression)', async () => {
+      // FROZEN at Sprint 4. Any change is a REGRESSION requiring re-baseline.
+      const [r1, r2, r3] = await Promise.all([
+        runConfigurationEngine(SPACE_1_INPUT),
+        runConfigurationEngine(SPACE_2_INPUT),
+        runConfigurationEngine(SPACE_3_INPUT),
+      ]);
+
+      expect(r1.configuration_hash).toBe('f8156a7e77a3f6dd0ec3df6b4bb9be6ed811ec488d2f9c904d5618d11ed7810e');
+      expect(r2.configuration_hash).toBe('b47529d208a49638c7191a3d5fef23ff3bf6133a3d716ef0043be5d351bbaa25');
+      expect(r3.configuration_hash).toBe('3022c37285ec55dc14f4a9c2fce6ac113c6f903fbaf1776e550a07cd177ca202');
     });
 
     it('each space hash is deterministic across runs', async () => {
