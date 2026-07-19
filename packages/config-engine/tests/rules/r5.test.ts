@@ -42,7 +42,7 @@ const INACTIVE_TRIM: TrimElement = {
 };
 
 describe('R5: computeTrimLineItems', () => {
-  describe('Happy path — active trims', () => {
+  describe('Happy path — active trims with matching colour', () => {
     it('regression fixture space 1: TV_UNIT_WALL 3600×2700, Oak trim → 41.34 rft', () => {
       // Formula-derived:
       // perimeter = 2(3600+2700) = 12,600mm
@@ -52,6 +52,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [OAK_TRIM],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: 'WOOD_GRAIN',
       });
 
       expect(result).toHaveLength(1);
@@ -72,6 +74,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [OAK_TRIM],
         width_mm: 3000,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: 'WOOD_GRAIN',
       });
 
       expect(result).toHaveLength(1);
@@ -84,6 +88,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [WHITE_TRIM],
         width_mm: 2400,
         height_mm: 2700,
+        panel_colour_variant: 'White',
+        panel_finish_variant: 'MATTE',
       });
 
       expect(result).toHaveLength(1);
@@ -98,6 +104,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: null,
       });
 
       expect(result).toHaveLength(0);
@@ -110,6 +118,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [INACTIVE_TRIM],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: null,
       })).toThrow('TRIM_SKU_NOT_FOUND');
     });
 
@@ -118,20 +128,73 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [OAK_TRIM, INACTIVE_TRIM],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: null,
       })).toThrow('TRIM_SKU_NOT_FOUND');
     });
   });
 
-  describe('Multiple trims on one template', () => {
-    it('two active trims → two line items with same quantity', () => {
-      const result = computeTrimLineItems({
-        trim_elements: [OAK_TRIM, WHITE_TRIM],
+  describe('[SI-3 CONFIRMED] Colour/finish compatibility validation (AD-24)', () => {
+    it('colour mismatch → throws TRIM_VARIANT_MISMATCH', () => {
+      // AD-24: trim colour must match panel colour
+      // Oak trim on a White panel → mismatch
+      expect(() => computeTrimLineItems({
+        trim_elements: [OAK_TRIM],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'White', // ← mismatch with Oak trim
+        panel_finish_variant: null,
+      })).toThrow('TRIM_VARIANT_MISMATCH');
+    });
+
+    it('finish mismatch → throws TRIM_VARIANT_MISMATCH', () => {
+      // Trim with explicit finish that doesn't match panel finish
+      const trimWithFinish = { ...OAK_TRIM, finish_variant: 'GLOSS' };
+      expect(() => computeTrimLineItems({
+        trim_elements: [trimWithFinish],
+        width_mm: 3600,
+        height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: 'MATTE', // ← mismatch with GLOSS
+      })).toThrow('TRIM_VARIANT_MISMATCH');
+    });
+
+    it('null trim colour → no mismatch check (trim has no declared colour)', () => {
+      // If trim doesn't declare a colour, compatibility check is skipped
+      const noColourTrim = { ...OAK_TRIM, colour_variant: null };
+      const result = computeTrimLineItems({
+        trim_elements: [noColourTrim],
+        width_mm: 3600,
+        height_mm: 2700,
+        panel_colour_variant: 'White',
+        panel_finish_variant: null,
+      });
+      expect(result).toHaveLength(1); // passes — no colour to mismatch
+    });
+
+    it('null panel colour → no mismatch check (panel has no declared colour)', () => {
+      const result = computeTrimLineItems({
+        trim_elements: [OAK_TRIM],
+        width_mm: 3600,
+        height_mm: 2700,
+        panel_colour_variant: null, // panel has no colour to check against
+        panel_finish_variant: null,
+      });
+      expect(result).toHaveLength(1); // passes
+    });
+  });
+
+  describe('Multiple trims on one template', () => {
+    it('two active matching trims → two line items with same quantity', () => {
+      const result = computeTrimLineItems({
+        trim_elements: [OAK_TRIM, { ...OAK_TRIM, sku: 'TRM-OAK-CORNER-001' }],
+        width_mm: 3600,
+        height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: null,
       });
 
       expect(result).toHaveLength(2);
-      // Both get same perimeter-based quantity
       expect(result[0].quantity).toBeCloseTo(41.34, 1);
       expect(result[1].quantity).toBeCloseTo(41.34, 1);
     });
@@ -144,6 +207,8 @@ describe('R5: computeTrimLineItems', () => {
         trim_elements: [doubleTrim],
         width_mm: 3600,
         height_mm: 2700,
+        panel_colour_variant: 'Oak',
+        panel_finish_variant: null,
       });
 
       // 41.3386 × 2 = 82.677
