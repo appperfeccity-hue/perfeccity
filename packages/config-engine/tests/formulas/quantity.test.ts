@@ -116,17 +116,19 @@ describe('computePerRftPerimeter', () => {
 });
 
 describe('computePerRftHeight', () => {
-  it('[SI-2 PENDING] 2700mm height: 2700/1000 = 2.7', () => {
-    // SPEC-INTERPRETATION [SI-2]: Part 8 states "PER_RFT_HEIGHT = height_mm/1000 × factor"
-    // The name says "RFT" (running feet) but divides by 1000 (meters), not 304.8 (feet).
-    // Implemented literally from spec. If /304.8 is intended, result would be 8.858.
-    // STATUS: PENDING — needs Akshay confirmation.
-    // Current implementation: /1000 (spec literal)
+  it('[SI-2 CONFIRMED] 2700mm height: 2700/1000 = 2.7', () => {
+    // SPEC-INTERPRETATION [SI-2]: CONFIRMED (AD-23).
+    // Decision: /1000 exactly as frozen specification states.
+    // "PER_RFT_HEIGHT SHALL be calculated as height_mm / 1000. No implicit
+    // mm→feet conversion SHALL be performed. Any change to /304.8 requires
+    // a formal specification revision."
+    // The "RFT" in the name is a naming inconsistency in the spec, not
+    // an implementation error — the formula produces height in meters × factor.
     expect(computePerRftHeight(2700)).toBeCloseTo(2.7);
   });
 
-  it('[SI-2 PENDING] with factor 1.5: 2700/1000 × 1.5 = 4.05', () => {
-    // SPEC-INTERPRETATION [SI-2]: same pending decision
+  it('[SI-2 CONFIRMED] with factor 1.5: 2700/1000 × 1.5 = 4.05', () => {
+    // SPEC-INTERPRETATION [SI-2]: CONFIRMED. /1000 is spec literal.
     expect(computePerRftHeight(2700, 1.5)).toBeCloseTo(4.05);
   });
 

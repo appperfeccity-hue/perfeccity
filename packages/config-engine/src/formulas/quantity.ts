@@ -84,17 +84,17 @@ export function computePerRftPerimeter(
 }
 
 /**
- * PER_RFT_HEIGHT: running feet based on wall height only.
+ * PER_RFT_HEIGHT: height-based quantity.
  * Formula: height_mm / 1000 × factor
- * Note: This divides by 1000 (mm to meters), not 304.8 (mm to feet).
  * 
- * SPEC-INTERPRETATION NOTE: Part 8 states "PER_RFT_HEIGHT = height_mm/1000 × factor"
- * The name says "RFT" (running feet) but the formula divides by 1000 (meters).
- * This is taken literally from the spec — the formula as stated is what's implemented.
- * If "1000" should be "304.8" (actual mm-to-feet conversion), this is a spec error
- * that needs correction, not a code fix.
+ * AD-23 (CONFIRMED): PER_RFT_HEIGHT SHALL be calculated as height_mm / 1000
+ * exactly as specified in the frozen specification. No implicit mm→feet
+ * conversion SHALL be performed. Any change to height_mm / 304.8 requires
+ * a formal specification revision because it changes BOM and pricing outputs.
  * 
- * [SI-2 — see note below about whether /1000 or /304.8 is correct]
+ * The "RFT" in the name is a naming inconsistency in the spec — the formula
+ * as written produces height in meters (not feet) × factor. This is the frozen
+ * behavior; the name is misleading but the math is authoritative.
  * 
  * @param height_mm - Wall height in mm
  * @param factor - Multiplier (default 1.0)
@@ -107,8 +107,7 @@ export function computePerRftHeight(
   if (height_mm <= 0) {
     throw new Error('INVALID_DIMENSIONS: height_mm must be > 0');
   }
-  // Part 8 literal: height_mm / 1000 × factor
-  // NOT height_mm / 304.8 — even though the name says "RFT"
+  // AD-23: height_mm / 1000 exactly. NOT /304.8.
   return (height_mm / 1000) * factor;
 }
 

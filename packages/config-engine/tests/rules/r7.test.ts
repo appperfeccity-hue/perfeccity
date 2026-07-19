@@ -115,11 +115,12 @@ describe('R7: computeConsumableQuantity', () => {
     expect(unit_label).toBe('rft');
   });
 
-  it('[SI-2 BLOCKED] PER_RFT_HEIGHT on 2700mm → 2.7 (spec literal /1000)', () => {
-    // SPEC-INTERPRETATION [SI-2]: uses /1000 as spec states.
-    // If SI-2 resolves to /304.8, expected value changes to 8.858.
-    // STATUS: BLOCKED — test passes with current implementation but correctness
-    // depends on SI-2 decision. DO NOT use this value for pricing until confirmed.
+  it('[SI-2 CONFIRMED] PER_RFT_HEIGHT on 2700mm → 2.7 (spec literal /1000, AD-23)', () => {
+    // SPEC-INTERPRETATION [SI-2]: CONFIRMED.
+    // /1000 is the frozen specification value. Any change to /304.8 requires
+    // a formal spec revision. The naming inconsistency ("RFT" but /1000) is
+    // acknowledged — the formula produces what the spec states, not what the
+    // name might imply.
     const { quantity, unit_label } = computeConsumableQuantity('PER_RFT_HEIGHT', baseConfig);
     expect(quantity).toBeCloseTo(2.7);
     expect(unit_label).toBe('rft');

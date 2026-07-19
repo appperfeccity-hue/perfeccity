@@ -50,6 +50,7 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 | ID | Decision | Rationale | Trade-off | Frozen? |
 |---|---|---|---|---|
 | AD-22 | `segment_b_mm = 0` for L_SHAPE is valid input (resolved as straight geometry) — SI-1 CONFIRMED | Confirmed by Akshay. Reasoning: (1) formula handles 0 cleanly (no math error), (2) rejecting would dead-end against T0's stage lock (wall_shape set at Stage 4, measurements at Stage 7), (3) deterministic (0 always produces the same valid result), (4) better UX (Consultants discover on-site that a corner is effectively straight). **Spec wording:** "L_SHAPE permits segment_b_mm >= 0. When 0, Geometry Engine SHALL resolve as straight for all layout/BOM/pricing. wall_shape value unchanged for audit." | `wall_shape = L_SHAPE` in the DB while geometry is straight — cosmetic inconsistency preserved deliberately for audit trail. No silent normalization of the stored `wall_shape` value. | Yes |
+| AD-23 | `PER_RFT_HEIGHT` uses `/1000` exactly as frozen spec states — SI-2 CONFIRMED | Confirmed: the frozen specification is the source of truth for deterministic calculations. `/1000` produces height in meters × factor. The "RFT" in the name is a naming inconsistency in the spec, not an implementation error — silently substituting `/304.8` would mean the implementation no longer matches the frozen specification, changing BOM quantities by 3.28× and breaking quotation reproducibility. Any change to `/304.8` requires a formal specification revision. | The naming inconsistency persists (formula called "RFT" but produces meters). This is documented, not "fixed" — the math is authoritative, the name is misleading. | Yes |
 
 ---
 
@@ -87,6 +88,7 @@ No contradictions found. No reversals needed.
 
 **Sprint 4 Spec-Interpretation Fixture List:**
 - SI-1: L_SHAPE `segment_b_mm = 0` or `null` → **CONFIRMED (Option A, AD-22).** Accepted as valid, resolved as straight geometry for calculations. wall_shape unchanged for audit.
+- SI-2: PER_RFT_HEIGHT `/1000` vs `/304.8` → **CONFIRMED (/1000, AD-23).** Spec literal is authoritative. The naming inconsistency ("RFT" but produces meters) is documented, not fixed. Any change to `/304.8` requires a formal spec revision.
 - Test specs (T9) are AUTHORED (assertions documented) but NOT EXECUTED (no live infra in this sandbox, placeholder bodies only)
 - "0 bugs found" means "0 bugs found via conversational Q&A + checklist" — NOT "0 bugs found by running tests"
 - The checklist addresses STRUCTURAL correctness (grants, atomicity, FKs) — Sprint 4 needs COMPUTATIONAL correctness verification (golden fixtures, formula tests, hash determinism) which the current 7-category checklist does not cover
