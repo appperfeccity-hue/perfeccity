@@ -38,14 +38,23 @@ Part 9.4 (Designer UI), Part 13 (Sprint 3 definition).
 - `POST /api/v1/skus/propose` — Designer only, no price fields, `status = PROPOSED`
   - `proposed_by = auth.uid()`
   - Cannot set `unit_cost_paise` or `sell_price_paise` (Designer never sets price)
+  - Validates: category, name, unit required; `width_mm`/`height_mm` for WALL_PANEL
 - `GET /api/v1/skus?status=PROPOSED` — Admin sees the proposal queue
 - `POST /api/v1/skus/:sku/approve` — Admin only
   - Body: `{unit_cost_paise, sell_price_paise}` (Admin sets pricing at approval)
   - Transitions `PROPOSED → ACTIVE`
-  - **Self-approval guard (AD-20):** `proposed_by != approving_user_id`
-    - Structurally, `user_role_enum` is single-valued (DESIGNER ≠ ADMIN), so this
-      can't happen in production. But enforce at DB level for defense-in-depth
-      (test accounts, future multi-role if ever added).
+  - **Self-approval guard (AD-20):** `proposed_by != approving_user_id` enforced at DB
+    - **Why the guard exists despite being currently unreachable:** `user_role_enum` is
+      single-valued today (DESIGNER ≠ ADMIN), so the same account can never both propose
+      and approve. The DB guard is defense-in-depth for: (a) test/demo accounts,
+      (b) future multi-role if ever added.
+    - **What this does NOT address:** rubber-stamping (Admin approving without real
+      quality review). That's a business-process concern, not a technical guard.
+      "Structurally impossible" means "same account can't do both" — it does NOT mean
+      "independent review is guaranteed."
+    - **Frozen assumption:** single-role-per-user (`user_role_enum` is one value, not
+      an array or junction table). If this ever changes, AD-20's DB guard becomes the
+      actual enforcement layer, not just defense-in-depth. Flag for revisit at that point.
 - `POST /api/v1/skus/:sku/reject` — Admin only
   - Body: `{reason}` (required)
   - Transitions `PROPOSED → REJECTED`
@@ -55,6 +64,21 @@ Part 9.4 (Designer UI), Part 13 (Sprint 3 definition).
 - **Full transition diagram:** PROPOSED→ACTIVE (approve), PROPOSED→REJECTED (reject),
   REJECTED→PROPOSED (resubmit), ACTIVE↔INACTIVE (toggle, Admin-only, either direction)
 - **`product_library.sku` is immutable** for the row's entire life, through every state
+
+### R2b: Admin-Direct vs Designer-Proposed — Validation Symmetry (explicit)
+- **Both paths** go through identical field-level validation in the API endpoint:
+  category enum, required fields (name, unit), dimension requirements per category
+  (WALL_PANEL requires `width_mm`/`height_mm`), valid enum values for all columns.
+- **The asymmetry is lifecycle, not validation:**
+  - Admin-direct: field-validated → immediately `status = ACTIVE` (no review gate)
+  - Designer-proposed: field-validated → `PROPOSED` → Admin reviews → sets pricing → `ACTIVE`
+- **This is intentional, not a gap:** Admin is explicitly a trusted role with direct
+  CRUD authority (Part 2: "SKU Master — direct create/edit/deactivate"). The proposal
+  cycle exists because Designers lack pricing authority, not because SKU creation needs
+  two-person review.
+- **No 10-point Smart Validation applies to SKUs:** The 10-point validation is for
+  *templates* (WF-11, R4). SKU validation is field-level checks only. A SKU is a single
+  product record, not a composed artifact — its "validation" is just data integrity.
 
 ### R3: Design Template Lifecycle (WF-11)
 - **DRAFT** — Designer creates, fully editable, saved incrementally
