@@ -46,7 +46,11 @@ export function computeGrossArea(
 
     case 'L_SHAPE':
       // Formula: (width_mm × height_mm) + (segment_b_mm × height_mm)
-      // SI-1: segment_b_mm=0 is accepted (adds 0). segment_b_mm=null treated as 0.
+      // SI-1 CONFIRMED (Akshay, Option A): segment_b_mm=0 is valid input.
+      // "L_SHAPE + segment_b_mm=0 → resolved as straight geometry for all
+      // layout, BOM and pricing calculations. wall_shape value remains unchanged
+      // for audit purposes. No validation error raised."
+      // segment_b_mm=null also treated as 0 (same resolution).
       return (width_mm * height_mm) + ((segment_b_mm ?? 0) * height_mm);
 
     case 'C_SHAPE':
