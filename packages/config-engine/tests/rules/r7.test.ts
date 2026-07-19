@@ -86,6 +86,57 @@ describe('R7: evaluateCondition', () => {
     };
     expect(evaluateCondition(consumable, baseConfig)).toBe(false);
   });
+
+  // Full coverage matrix for ALL 5 valid condition fields (required before T8 freeze)
+  describe('Full condition field coverage (all 5 valid fields)', () => {
+    it('wall_shape match → true', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'wall_shape', condition_value: 'STRAIGHT',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(true);
+    });
+
+    it('wall_shape no-match → false', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'wall_shape', condition_value: 'L_SHAPE',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(false);
+    });
+
+    it('lighting_type match → true', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'lighting_type', condition_value: 'COVE_LIGHT',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(true);
+    });
+
+    it('lighting_type no-match → false', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'lighting_type', condition_value: 'NONE',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(false);
+    });
+
+    it('material_preference match → true', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'material_preference', condition_value: 'WPC',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(true);
+    });
+
+    it('material_preference no-match → false', () => {
+      const consumable: ConsumableTemplate = {
+        sku: 'CSM-X', quantity_formula: 'PER_SQM',
+        condition_field: 'material_preference', condition_value: 'PVC',
+      };
+      expect(evaluateCondition(consumable, baseConfig)).toBe(false);
+    });
+  });
 });
 
 describe('R7: computeConsumableQuantity', () => {

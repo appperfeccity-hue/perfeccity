@@ -56,13 +56,61 @@ export interface ConfigHashInput {
  * Compute the configuration hash (SHA-256 of canonical JSON).
  * Deterministic: same inputs → same hash, every time.
  * 
+ * CRITICAL: Arrays are sorted by a stable key before serialization (AD-25).
+ * Without this, two configuration runs producing the same logical line items
+ * in different insertion/iteration order would produce different hashes,
+ * violating the "same configuration → same hash" guarantee.
+ * 
+ * Sort keys:
+ * - line_items: sorted by (sku, group_name, product_role) — deterministic given
+ *   that a configuration can't have two line items with the same sku+group+role
+ * - furniture: sorted by (sku, default_position) — position disambiguates duplicates
+ * 
  * Uses Web Crypto API (available in Deno/Edge Functions and modern Node).
  */
 export async function computeConfigurationHash(input: ConfigHashInput): Promise<string> {
-  const canonical = canonicalize(input);
+  // Sort arrays before canonicalization (AD-25: deterministic ordering)
+  const sortedInput: ConfigHashInput = {
+    template_id: input.template_id,
+    measurements: input.measurements,
+    line_items: [...input.line_items].sort(compareLineItems),
+    furniture: [...input.furniture].sort(compareFurniture),
+  };
+
+  const canonical = canonicalize(sortedInput);
   const encoded = new TextEncoder().encode(canonical);
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
   return bytesToHex(new Uint8Array(hashBuffer));
+}
+
+/**
+ * Stable sort comparator for line_items.
+ * Sort by: sku → group_name → product_role (all strings, lexicographic)
+ */
+function compareLineItems(
+  a: ConfigHashInput['line_items'][0],
+  b: ConfigHashInput['line_items'][0]
+): number {
+  const skuCmp = a.sku.localeCompare(b.sku);
+  if (skuCmp !== 0) return skuCmp;
+  const groupCmp = a.group_name.localeCompare(b.group_name);
+  if (groupCmp !== 0) return groupCmp;
+  return a.product_role.localeCompare(b.product_role);
+}
+
+/**
+ * Stable sort comparator for furniture.
+ * Sort by: sku → default_position (null sorts last)
+ */
+function compareFurniture(
+  a: ConfigHashInput['furniture'][0],
+  b: ConfigHashInput['furniture'][0]
+): number {
+  const skuCmp = a.sku.localeCompare(b.sku);
+  if (skuCmp !== 0) return skuCmp;
+  const posA = a.default_position ?? 'zzz'; // null sorts last
+  const posB = b.default_position ?? 'zzz';
+  return posA.localeCompare(posB);
 }
 
 /**

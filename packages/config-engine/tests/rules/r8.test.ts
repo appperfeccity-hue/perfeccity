@@ -165,4 +165,89 @@ describe('R8: computeConfigurationHash', () => {
     const hash2 = await computeConfigurationHash(input2);
     expect(hash1).toBe(hash2); // intentionally equal
   });
+
+  describe('[AD-25] Array ordering idempotency', () => {
+    it('line_items in different insertion order → same hash', async () => {
+      // AD-25: arrays are sorted before serialization.
+      // Two configurations with same line items in different order MUST hash identically.
+      const orderA: ConfigHashInput = {
+        ...baseInput,
+        line_items: [
+          { sku: 'WLP-WPC-CLS-OAK-001', quantity: 18, unit_label: 'pc', product_role: 'PRIMARY', group_name: 'WALL_PANEL' },
+          { sku: 'TRM-OAK-SGP-001', quantity: 41.34, unit_label: 'rft', product_role: 'TRIM', group_name: 'TRIM' },
+          { sku: 'CSM-PVC-BSB-001', quantity: 9.72, unit_label: 'sqm', product_role: 'CONSUMABLE', group_name: 'CONSUMABLE' },
+        ],
+      };
+
+      const orderB: ConfigHashInput = {
+        ...baseInput,
+        line_items: [
+          { sku: 'CSM-PVC-BSB-001', quantity: 9.72, unit_label: 'sqm', product_role: 'CONSUMABLE', group_name: 'CONSUMABLE' },
+          { sku: 'WLP-WPC-CLS-OAK-001', quantity: 18, unit_label: 'pc', product_role: 'PRIMARY', group_name: 'WALL_PANEL' },
+          { sku: 'TRM-OAK-SGP-001', quantity: 41.34, unit_label: 'rft', product_role: 'TRIM', group_name: 'TRIM' },
+        ],
+      };
+
+      const hashA = await computeConfigurationHash(orderA);
+      const hashB = await computeConfigurationHash(orderB);
+      expect(hashA).toBe(hashB);
+    });
+
+    it('furniture in different insertion order → same hash', async () => {
+      const orderA: ConfigHashInput = {
+        ...baseInput,
+        furniture: [
+          { sku: 'FRN-TVC-LINE-001', quantity: 1, default_position: 'CENTER', colour_variant: 'Oak' },
+          { sku: 'FRN-SHF-CUBE-001', quantity: 2, default_position: 'LEFT', colour_variant: 'Oak' },
+        ],
+      };
+
+      const orderB: ConfigHashInput = {
+        ...baseInput,
+        furniture: [
+          { sku: 'FRN-SHF-CUBE-001', quantity: 2, default_position: 'LEFT', colour_variant: 'Oak' },
+          { sku: 'FRN-TVC-LINE-001', quantity: 1, default_position: 'CENTER', colour_variant: 'Oak' },
+        ],
+      };
+
+      const hashA = await computeConfigurationHash(orderA);
+      const hashB = await computeConfigurationHash(orderB);
+      expect(hashA).toBe(hashB);
+    });
+
+    it('same logical config, both arrays reordered → same hash', async () => {
+      // Combined: both line_items AND furniture reordered simultaneously
+      const orderA: ConfigHashInput = {
+        template_id: 'b0000000-0000-0000-0000-000000000001',
+        measurements: { width_mm: 3600, height_mm: 2700, gross_area_sqmm: 9720000, net_area_sqmm: 9720000 },
+        line_items: [
+          { sku: 'A-001', quantity: 10, unit_label: 'pc', product_role: 'PRIMARY', group_name: 'WALL_PANEL' },
+          { sku: 'B-001', quantity: 5, unit_label: 'rft', product_role: 'TRIM', group_name: 'TRIM' },
+          { sku: 'C-001', quantity: 3, unit_label: 'sqm', product_role: 'CONSUMABLE', group_name: 'CONSUMABLE' },
+        ],
+        furniture: [
+          { sku: 'F-001', quantity: 1, default_position: 'LEFT', colour_variant: 'Oak' },
+          { sku: 'F-002', quantity: 1, default_position: 'RIGHT', colour_variant: 'Oak' },
+        ],
+      };
+
+      const orderB: ConfigHashInput = {
+        template_id: 'b0000000-0000-0000-0000-000000000001',
+        measurements: { width_mm: 3600, height_mm: 2700, gross_area_sqmm: 9720000, net_area_sqmm: 9720000 },
+        line_items: [
+          { sku: 'C-001', quantity: 3, unit_label: 'sqm', product_role: 'CONSUMABLE', group_name: 'CONSUMABLE' },
+          { sku: 'A-001', quantity: 10, unit_label: 'pc', product_role: 'PRIMARY', group_name: 'WALL_PANEL' },
+          { sku: 'B-001', quantity: 5, unit_label: 'rft', product_role: 'TRIM', group_name: 'TRIM' },
+        ],
+        furniture: [
+          { sku: 'F-002', quantity: 1, default_position: 'RIGHT', colour_variant: 'Oak' },
+          { sku: 'F-001', quantity: 1, default_position: 'LEFT', colour_variant: 'Oak' },
+        ],
+      };
+
+      const hashA = await computeConfigurationHash(orderA);
+      const hashB = await computeConfigurationHash(orderB);
+      expect(hashA).toBe(hashB);
+    });
+  });
 });
