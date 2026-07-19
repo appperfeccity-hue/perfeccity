@@ -35,6 +35,14 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 
 ---
 
+## Sprint 2 Decisions
+
+| ID | Decision | Rationale | Trade-off | Frozen? |
+|---|---|---|---|---|
+| AD-19 | Stage 4 space replacement uses a Postgres RPC (`replace_project_spaces`) for atomicity | The original two-call pattern (delete then insert from Edge Function) has a partial-failure gap: if delete succeeds but insert fails, project is left with zero spaces — worse than either old or new state, silent, and the same category of risk T2's compensating-delete solved. Wrapping in a Postgres function means if insert fails, the delete is rolled back (transactional). | Adds a migration (00010) and an RPC call pattern. Consistent with T7's `assign_lead_to_consultant` — any multi-step write that can leave a worse-than-either-side state should be a DB function, not multiple Edge Function round-trips. | Yes |
+
+---
+
 ## Cross-AD Interactions (reviewed end-to-end after Sprint 1 completion)
 
 Checked for contradictions or unintended coupling between all 18 decisions:

@@ -124,20 +124,10 @@ export async function handleStage4(
     }
   }
 
-  // Full replacement: delete existing spaces, insert new ones
-  const { error: deleteError } = await admin
-    .from('application_spaces')
-    .delete()
-    .eq('project_id', projectId);
-
-  if (deleteError) {
-    console.error('Stage 4 space deletion failed:', deleteError);
-    return error('DB_ERROR', 'Failed to update spaces', 500);
-  }
-
-  // Insert new spaces
-  const spaceRows = body.spaces.map(s => ({
-    project_id: projectId,
+  // Atomic replacement: delete old + insert new in one transaction (AD-19).
+  // Uses a Postgres RPC function to prevent the partial-failure state where
+  // delete succeeds but insert fails, leaving zero spaces.
+  const spacePayload = body.spaces.map(s => ({
     space_type: s.space_type,
     wall_shape: s.wall_shape || null,
     is_primary_wall: s.is_primary_wall,
@@ -147,22 +137,30 @@ export async function handleStage4(
     height_mm: s.height_mm || null,
   }));
 
-  const { data: inserted, error: insertError } = await admin
-    .from('application_spaces')
-    .insert(spaceRows)
-    .select('space_id, space_type, wall_shape, is_primary_wall, width_mm, height_mm');
+  const { data: inserted, error: rpcError } = await admin.rpc('replace_project_spaces', {
+    p_project_id: projectId,
+    p_spaces: spacePayload,
+  });
 
-  if (insertError) {
-    // Check if it's the partial unique index violation (concurrent >1 primary)
-    if (insertError.message?.includes('one_primary_wall_per_project')) {
+  if (rpcError) {
+    // Check for specific constraint violations
+    if (rpcError.message?.includes('one_primary_wall_per_project')) {
       return error(
         'PRIMARY_WALL_REQUIRED',
         'DB constraint: only one primary wall allowed per project (concurrent conflict)',
         422, 'is_primary_wall'
       );
     }
-    console.error('Stage 4 space insertion failed:', insertError);
-    return error('DB_ERROR', 'Failed to save spaces', 500);
+    if (rpcError.message?.includes('space_type_enum')) {
+      return error(
+        'INVALID_SPACE_TYPE',
+        'Invalid space type value rejected by database',
+        422, 'space_type'
+      );
+    }
+    // ⚠️ CO-MAINTENANCE: error messages from replace_project_spaces RPC
+    console.error('Stage 4 replace_project_spaces RPC failed:', rpcError);
+    return error('DB_ERROR', 'Failed to save spaces: ' + rpcError.message, 500);
   }
 
   // Mark Stage 4 as COMPLETED
