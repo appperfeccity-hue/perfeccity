@@ -20,8 +20,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { requireAuth } from '../_shared/middleware/rbac.ts';
 import { getAdminClient, getUserClient } from '../_shared/supabase.ts';
 import { success, error, paginated } from '../_shared/response.ts';
-import { createHash } from 'https://deno.land/std@0.177.0/crypto/mod.ts';
-import { encode as hexEncode } from 'https://deno.land/std@0.177.0/encoding/hex.ts';
+import { encryptMobile, decryptMobile, hashMobile } from '../_shared/crypto.ts';
 
 serve(async (req: Request) => {
   const method = req.method;
@@ -90,8 +89,8 @@ async function handleCreate(req: Request): Promise<Response> {
 
   const admin = getAdminClient();
 
-  // Compute mobile hash for uniqueness check
-  const mobileHash = await computeMobileHash(body.mobile);
+  // Compute mobile hash for uniqueness check (deterministic SHA-256, no key)
+  const mobileHash = await hashMobile(body.mobile);
 
   // Duplicate detection: check mobile_hash exists for non-LOST leads
   const { data: existingLead } = await admin
@@ -106,8 +105,8 @@ async function handleCreate(req: Request): Promise<Response> {
     return error('DUPLICATE_LEAD', 'A lead with this mobile number already exists', 409, 'mobile');
   }
 
-  // Encrypt mobile for storage
-  const mobileEncrypted = new TextEncoder().encode(body.mobile);
+  // Encrypt mobile for storage (AES-256-GCM, key from MOBILE_ENCRYPTION_KEY env var — AD-17)
+  const mobileEncrypted = await encryptMobile(body.mobile);
 
   // Insert the lead
   const { data: newLead, error: insertError } = await admin
@@ -220,10 +219,16 @@ async function handleGetOne(req: Request, leadId: string): Promise<Response> {
     return error('FORBIDDEN', 'You do not have access to this lead', 403);
   }
 
-  // Decrypt mobile for display (simple encoding reversal for dev — production would use pgcrypto)
-  const decryptedMobile = lead.mobile_encrypted
-    ? new TextDecoder().decode(new Uint8Array(lead.mobile_encrypted))
-    : null;
+  // Decrypt mobile for display (AES-256-GCM, requires MOBILE_ENCRYPTION_KEY env var)
+  let decryptedMobile: string | null = null;
+  if (lead.mobile_encrypted) {
+    try {
+      decryptedMobile = await decryptMobile(new Uint8Array(lead.mobile_encrypted));
+    } catch (e) {
+      console.error('Mobile decryption failed (key mismatch or corrupted data):', e);
+      decryptedMobile = '[decryption failed]';
+    }
+  }
 
   return success({
     ...lead,
@@ -235,14 +240,7 @@ async function handleGetOne(req: Request, leadId: string): Promise<Response> {
 // ============================================================
 // Helpers
 // ============================================================
-
-async function computeMobileHash(mobile: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(mobile);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = new Uint8Array(hashBuffer);
-  return Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// Encryption + hashing now in _shared/crypto.ts (AD-17)
 
 function extractLeadId(pathname: string): string | null {
   // Match UUID in path after /leads/
