@@ -67,7 +67,15 @@ Checked for contradictions or unintended coupling between all 18 decisions:
 - **AD-19 × FK constraints on `application_spaces`:** **Sprint 4 dependency found.** Six tables FK-reference `application_spaces.space_id`. The RPC's `DELETE FROM application_spaces WHERE project_id = X` will fail with a FK violation once Sprint 4 populates `space_configurations`, `space_measurements`, etc. Resolution deferred to Sprint 4: either (a) block Stage 4 resubmission once downstream data exists, or (b) add CASCADE or clear child tables in the RPC. This is NOT a Sprint 2 bug (no child rows exist in Sprint 2), but it's a real runtime error Sprint 4 must handle before going live.
 - **AD-19 × Stage 4 resubmission:** Resubmission while still in Stage 4 phase is correct behavior per the spec ("saved incrementally," tablet-first UX). The lock comes from Sprint 4 (Stage 5 start freezes spaces). Atomicity (AD-19) makes resubmission safe from a data-integrity perspective within Sprint 2's scope.
 
-No contradictions found. No reversals needed. One Sprint 4 dependency documented.
+**Updated after Sprint 3 (AD-20/AD-21 interactions):**
+
+- **AD-20 × AD-5:** Confirmed — `approve_sku_proposal` has `SECURITY DEFINER` + `SET search_path = public` + `GRANT EXECUTE`. Full AD-5/AD-11 discipline.
+- **AD-21 × AD-19:** Complementary, not contradictory. Decision tree: is intermediate state corrupt? Yes → RPC (AD-19). No → is failure visible? Yes → two calls (AD-21). These cover the full spectrum of multi-step writes.
+- **AD-20 × AD-15:** Layered — AD-20 is defense-in-depth given AD-15's single-role-per-user invariant. If AD-15 ever breaks, AD-20 becomes real enforcement. No contradiction.
+- **AD-21 × notifications:** AD-21's "visible" test assumes queue views exist as a discovery path independent of notifications. Holds as long as Admin checks queues (true in current architecture). Would fail if notifications became the only alert mechanism with no queue polling.
+- **T5 FK forward-check:** `design_elements` and `template_consumables` confirmed as true leaf tables — no Sprint 4+ FK dependencies (unlike `application_spaces`). Configuration Engine reads-then-copies, doesn't FK-reference.
+
+No contradictions found. No reversals needed.
 
 ---
 
