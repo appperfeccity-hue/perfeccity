@@ -39,7 +39,7 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 
 | ID | Decision | Rationale | Trade-off | Frozen? |
 |---|---|---|---|---|
-| AD-19 | Stage 4 space replacement uses a Postgres RPC (`replace_project_spaces`) for atomicity | The original two-call pattern (delete then insert from Edge Function) has a partial-failure gap: if delete succeeds but insert fails, project is left with zero spaces — worse than either old or new state, silent, and the same category of risk T2's compensating-delete solved. Wrapping in a Postgres function means if insert fails, the delete is rolled back (transactional). | Adds a migration (00010) and an RPC call pattern. Consistent with T7's `assign_lead_to_consultant` — any multi-step write that can leave a worse-than-either-side state should be a DB function, not multiple Edge Function round-trips. | Yes |
+| AD-19 | Stage 4 space replacement uses a Postgres RPC (`replace_project_spaces`) for atomicity | The original two-call pattern (delete then insert from Edge Function) has a partial-failure gap: if delete succeeds but insert fails, project is left with zero spaces — worse than either old or new state, silent, and the same category of risk T2's compensating-delete solved. Wrapping in a Postgres function means if insert fails, the delete is rolled back (transactional). | Adds a migration (00010) and an RPC call pattern. Consistent with T7's `assign_lead_to_consultant` — any multi-step write that can leave a worse-than-either-side state should be a DB function, not multiple Edge Function round-trips. **Sprint 4 dependency:** the DELETE in this RPC will FK-fail once `space_configurations`/`space_measurements` etc. reference spaces (Sprint 4+). At that point, Stage 4 resubmission must either be blocked when downstream data exists, or the RPC must cascade. Decision deferred to Sprint 4 — documented here so it's not discovered as a runtime FK error. | Yes |
 
 ---
 
@@ -57,7 +57,15 @@ Checked for contradictions or unintended coupling between all 18 decisions:
 - **AD-2 × AD-5:** RPC stores `p_manager_id` from the Edge Function's `rbac.auth.userId`, which equals `auth.uid()` (AD-2). Consistent only if all staff are created via T2. Protected by AD-15's invariant ("Auth users created outside T2 is an operational error").
 - **AD-8 × AD-11:** Maintenance coupling — every new helper function needs a GRANT. Grows linearly with sprints. Documented in AD-11 trade-off.
 
-No contradictions found. No reversals needed.
+**Updated after Sprint 2 (AD-19 interactions):**
+
+- **AD-19 × AD-5:** Confirmed — `replace_project_spaces` has `SECURITY DEFINER` + `SET search_path = public`. Same discipline as `assign_lead_to_consultant`.
+- **AD-19 × AD-11:** Confirmed — `GRANT EXECUTE TO authenticated, service_role` present on the function.
+- **AD-19 × AD-18:** Bidirectional co-maintenance markers exist (migration → stage-4.ts, stage-4.ts → RPC). The RPC doesn't raise named exceptions like T7 — it relies on Postgres constraint errors. Edge Function matches on constraint names (`one_primary_wall_per_project`, `space_type_enum`).
+- **AD-19 × FK constraints on `application_spaces`:** **Sprint 4 dependency found.** Six tables FK-reference `application_spaces.space_id`. The RPC's `DELETE FROM application_spaces WHERE project_id = X` will fail with a FK violation once Sprint 4 populates `space_configurations`, `space_measurements`, etc. Resolution deferred to Sprint 4: either (a) block Stage 4 resubmission once downstream data exists, or (b) add CASCADE or clear child tables in the RPC. This is NOT a Sprint 2 bug (no child rows exist in Sprint 2), but it's a real runtime error Sprint 4 must handle before going live.
+- **AD-19 × Stage 4 resubmission:** Resubmission while still in Stage 4 phase is correct behavior per the spec ("saved incrementally," tablet-first UX). The lock comes from Sprint 4 (Stage 5 start freezes spaces). Atomicity (AD-19) makes resubmission safe from a data-integrity perspective within Sprint 2's scope.
+
+No contradictions found. No reversals needed. One Sprint 4 dependency documented.
 
 ---
 
@@ -66,6 +74,12 @@ No contradictions found. No reversals needed.
 _Decisions that are expected to be needed but haven't been made yet._
 
 - **Sprint 3:** `payment_method_enum` — whether to add `NET_BANKING`/`EMI` (Part 15, item 7)
+- **Sprint 4:** Stage 4 resubmission after downstream data exists — `replace_project_spaces`
+  RPC will FK-fail once `space_configurations`/`space_measurements`/`configured_furniture`
+  reference spaces. Options: (a) block Stage 4 resubmission when `consultation_stages`
+  stage 5+ has status != PENDING, or (b) cascade-delete child data in the RPC, or
+  (c) soft-delete spaces and create new ones. Decision must be made before Sprint 4
+  implements Stage 5 (template selection writes `selected_template_id` on spaces).
 - **Sprint 6:** Customer RLS via `customer_accounts.auth_user_id` — exact policy shape
   depends on how customer project links are populated during the convert flow
 - **Sprint 6:** Convert flow MUST use compensating-delete pattern for customer Auth +
