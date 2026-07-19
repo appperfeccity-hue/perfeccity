@@ -165,12 +165,26 @@ CREATE POLICY leads_consultant_update ON leads
 
 ALTER TABLE lead_activities ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY lead_activities_admin_all ON lead_activities
-  FOR ALL USING (auth.user_role() = 'ADMIN');
+-- APPEND-ONLY AUDIT TRAIL: No UPDATE or DELETE policies exist.
+-- This table's value depends on immutability — once written, rows cannot be
+-- modified or removed by any role (including Admin at the RLS layer).
+-- Admin can still bypass via service_role if genuinely needed for ops.
 
--- Consultant: own leads' activities (uses cached helper)
-CREATE POLICY lead_activities_consultant ON lead_activities
-  FOR ALL USING (
+CREATE POLICY lead_activities_admin_read ON lead_activities
+  FOR SELECT USING (auth.user_role() = 'ADMIN');
+
+CREATE POLICY lead_activities_admin_insert ON lead_activities
+  FOR INSERT WITH CHECK (auth.user_role() = 'ADMIN');
+
+-- Consultant: read + insert on own leads' activities only
+CREATE POLICY lead_activities_consultant_read ON lead_activities
+  FOR SELECT USING (
+    auth.user_role() = 'SALESPERSON'
+    AND lead_id IN (SELECT auth.consultant_lead_ids())
+  );
+
+CREATE POLICY lead_activities_consultant_insert ON lead_activities
+  FOR INSERT WITH CHECK (
     auth.user_role() = 'SALESPERSON'
     AND lead_id IN (SELECT auth.consultant_lead_ids())
   );
