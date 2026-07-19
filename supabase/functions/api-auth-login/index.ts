@@ -28,9 +28,7 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { getAdminClient } from '../_shared/supabase.ts';
 import { success, error } from '../_shared/response.ts';
-
-const RATE_LIMIT_WINDOW_MINUTES = 15;
-const RATE_LIMIT_MAX_ATTEMPTS = 10;
+import { checkRateLimit, recordFailedAttempt, clearRateLimitHistory, getClientIp, RATE_LIMIT_WINDOW_MINUTES } from '../_shared/rate-limit.ts';
 
 serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -133,89 +131,4 @@ serve(async (req: Request) => {
   }
 });
 
-// ============================================================
-// Rate Limiting — Postgres-backed, self-cleaning
-// ============================================================
-
-interface RateLimitResult {
-  ok: boolean;
-  attempts: number;
-}
-
-async function checkRateLimit(
-  admin: ReturnType<typeof getAdminClient>,
-  ip: string
-): Promise<RateLimitResult> {
-  const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
-
-  // Self-cleaning: purge expired rows for this IP in the same query context
-  await admin
-    .from('login_attempts')
-    .delete()
-    .lt('attempted_at', windowStart);
-
-  // Count recent failures for this IP
-  const { count, error: countError } = await admin
-    .from('login_attempts')
-    .select('*', { count: 'exact', head: true })
-    .eq('ip_address', ip)
-    .gte('attempted_at', windowStart);
-
-  if (countError) {
-    // If rate limit check fails, allow the attempt (fail open for availability)
-    console.error('Rate limit check failed (allowing attempt):', countError);
-    return { ok: true, attempts: 0 };
-  }
-
-  const attempts = count || 0;
-  return { ok: attempts < RATE_LIMIT_MAX_ATTEMPTS, attempts };
-}
-
-async function recordFailedAttempt(
-  admin: ReturnType<typeof getAdminClient>,
-  ip: string,
-  email: string
-): Promise<void> {
-  const { error: insertError } = await admin
-    .from('login_attempts')
-    .insert({ ip_address: ip, email });
-
-  if (insertError) {
-    // Non-fatal: rate limiting is defense-in-depth, not a critical path
-    console.error('Failed to record login attempt:', insertError);
-  }
-}
-
-async function clearRateLimitHistory(
-  admin: ReturnType<typeof getAdminClient>,
-  ip: string
-): Promise<void> {
-  // On successful login, clear all failed attempts for this IP
-  // This prevents a legitimate user from being locked out after a few typos
-  const { error: deleteError } = await admin
-    .from('login_attempts')
-    .delete()
-    .eq('ip_address', ip);
-
-  if (deleteError) {
-    console.error('Non-fatal: failed to clear rate limit history:', deleteError);
-  }
-}
-
-// ============================================================
-// Helpers
-// ============================================================
-
-function getClientIp(req: Request): string {
-  // Supabase Edge Functions run behind a proxy; real IP is in headers
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    // x-forwarded-for can be comma-separated; first is the client
-    return forwarded.split(',')[0].trim();
-  }
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp) return realIp;
-
-  // Fallback — should never happen in production behind a proxy
-  return '0.0.0.0';
-}
+// Rate limiting + IP extraction now in _shared/rate-limit.ts (AD-16: shared table)
