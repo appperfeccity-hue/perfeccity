@@ -4,6 +4,11 @@
 > It contains Parts 0–15 of the complete engineering handover document.
 > All implementation must trace back to specific Parts of this document.
 > Part 15 items are PENDING — do not implement without explicit sign-off.
+>
+> **Related:** [DECISIONS.md](./DECISIONS.md) — running log of implementation
+> decisions (AD-1 through AD-N) that deviate from or extend the frozen spec
+> due to infrastructure choices (Supabase stack). Check before assuming the
+> ERD exactly matches what's deployed.
 
 ## Quick Reference
 

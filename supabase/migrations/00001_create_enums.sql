@@ -6,7 +6,10 @@
 -- - Existing values are never removed or renamed
 -- - Any addition gets a new versioned migration file
 --
--- Total: 37 CREATE TYPE statements
+-- Total: 39 CREATE TYPE statements
+-- (Part 6 table lists 38; asset_type_enum is the 39th, required by
+-- digital_assets.asset_type in Part 5 but editorially omitted from Part 6's table.
+-- Orphaned types removed per v7.0: price_group_enum, pdf_job_status_enum — neither present here.)
 
 -- ============================================================
 -- Domain 1 — Authentication & Identity
