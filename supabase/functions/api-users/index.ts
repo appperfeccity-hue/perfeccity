@@ -150,8 +150,24 @@ async function handleCreate(req: Request, createdBy: string): Promise<Response> 
 
     const { error: deleteError } = await admin.auth.admin.deleteUser(authUserId);
     if (deleteError) {
-      // Compensating delete also failed — log loudly, this needs manual cleanup
+      // Compensating delete also failed — write to audit_log (durable, queryable)
+      // console.error alone is ephemeral in Edge Functions — nobody would discover this.
       console.error('CRITICAL: Compensating delete ALSO failed. Orphaned Auth user:', authUserId, deleteError);
+
+      // Write durable record so Admin can find orphaned users via:
+      // SELECT * FROM audit_log WHERE action = 'ORPHANED_AUTH_USER_CLEANUP_FAILED'
+      await admin.from('audit_log').insert({
+        actor_id: createdBy,
+        entity_type: 'auth_user',
+        action: 'ORPHANED_AUTH_USER_CLEANUP_FAILED',
+        details: {
+          orphaned_auth_user_id: authUserId,
+          email: body.email,
+          original_error: dbError.message,
+          delete_error: deleteError.message,
+          requires_manual_cleanup: true,
+        },
+      });
     }
 
     // Return the original error to the caller
