@@ -83,6 +83,20 @@ AS $$
 $$;
 
 -- ============================================================
+-- GRANTS — Helper functions must be executable by authenticated users
+-- Without these, RLS policies calling the helpers fail CLOSED (permission denied),
+-- not fail SAFE (no rows). This is a security-critical step, not optional.
+-- ============================================================
+
+GRANT EXECUTE ON FUNCTION auth.user_role() TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION auth.user_id() TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION auth.consultant_project_ids() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION auth.manager_project_ids() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION auth.staff_project_ids() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION auth.designer_draft_template_ids() TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION auth.consultant_lead_ids() TO authenticated, service_role;
+
+-- ============================================================
 -- DOMAIN 1 — Authentication & Identity
 -- ============================================================
 
