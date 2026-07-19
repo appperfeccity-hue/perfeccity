@@ -87,9 +87,23 @@ serve(async (req: Request) => {
       .single();
 
     if (customerError || !customerRow) {
-      // Auth entry exists but no customer_accounts row.
-      // This shouldn't happen in normal flow (convert creates both atomically),
-      // but handle gracefully.
+      // Auth entry exists with role=CUSTOMER but no customer_accounts row.
+      // This is a data integrity issue (orphaned Auth user) — distinct from
+      // "staff on wrong endpoint" (which was caught by role check above).
+      // Log to audit_log for discoverability, then return a distinct error.
+      console.error('Customer auth_user_id lookup failed:', authData.user.id, customerError);
+      await admin.from('audit_log').insert({
+        actor_id: null, // no staff actor — this is a system-detected issue
+        entity_type: 'customer_account',
+        action: 'CUSTOMER_AUTH_PROFILE_MISMATCH',
+        details: {
+          auth_user_id: authData.user.id,
+          email,
+          error: customerError?.message || 'no customer_accounts row found',
+          note: 'Auth user exists with role=CUSTOMER but no matching customer_accounts.auth_user_id row',
+        },
+      });
+
       return error(
         'ACCOUNT_NOT_FOUND',
         'Customer account not found. Contact your Design Consultant.',

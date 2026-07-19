@@ -34,10 +34,12 @@ export type RbacResult =
  * 
  * @param req - The incoming Request
  * @param allowedRoles - Array of role strings permitted to access this endpoint
+ * @param namespace - 'staff' (default) or 'customer' — enforces endpoint namespace guard
  */
 export async function requireAuth(
   req: Request,
-  allowedRoles: string[]
+  allowedRoles: string[],
+  namespace: 'staff' | 'customer' = 'staff'
 ): Promise<RbacResult> {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -78,6 +80,28 @@ export async function requireAuth(
       ok: false,
       response: new Response(
         JSON.stringify({ data: null, errors: [{ code: 'ROLE_MISSING', message: 'Token lacks role claim — auth hook may not be registered (see AD-7)' }] }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      ),
+    };
+  }
+
+  // Namespace guard: /api/v1/* rejects CUSTOMER; /customer/v1/* rejects non-CUSTOMER
+  // This prevents a Customer from accessing staff endpoints even if they somehow
+  // obtain a token with the right structure, and vice versa.
+  if (namespace === 'staff' && role === 'CUSTOMER') {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ data: null, errors: [{ code: 'FORBIDDEN', message: 'Customer tokens cannot access staff endpoints' }] }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      ),
+    };
+  }
+  if (namespace === 'customer' && role !== 'CUSTOMER') {
+    return {
+      ok: false,
+      response: new Response(
+        JSON.stringify({ data: null, errors: [{ code: 'FORBIDDEN', message: 'Staff tokens cannot access customer endpoints' }] }),
         { status: 403, headers: { 'Content-Type': 'application/json' } }
       ),
     };
