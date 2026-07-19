@@ -36,18 +36,23 @@ BEGIN
   WHERE user_id = p_consultant_id;
 
   IF NOT FOUND THEN
+    -- ⚠️ CO-MAINTENANCE: This exception message string is pattern-matched by
+    -- supabase/functions/api-leads-assign/index.ts (mapRpcError function).
+    -- Do NOT edit this text without updating the Edge Function's matching logic.
     RAISE EXCEPTION 'CONSULTANT_NOT_FOUND'
       USING ERRCODE = 'P0003',
             HINT = 'The specified consultant_id does not exist in the users table';
   END IF;
 
   IF _consultant.role != 'SALESPERSON' THEN
+    -- ⚠️ CO-MAINTENANCE: matched by api-leads-assign/index.ts mapRpcError
     RAISE EXCEPTION 'NOT_A_CONSULTANT'
       USING ERRCODE = 'P0004',
             HINT = 'The specified user is not a Design Consultant (role must be SALESPERSON)';
   END IF;
 
   IF _consultant.status != 'ACTIVE' THEN
+    -- ⚠️ CO-MAINTENANCE: matched by api-leads-assign/index.ts mapRpcError
     RAISE EXCEPTION 'CONSULTANT_INACTIVE'
       USING ERRCODE = 'P0005',
             HINT = 'The specified consultant account is not active';
@@ -60,6 +65,7 @@ BEGIN
   FOR UPDATE;
 
   IF NOT FOUND THEN
+    -- ⚠️ CO-MAINTENANCE: matched by api-leads-assign/index.ts mapRpcError
     RAISE EXCEPTION 'LEAD_NOT_FOUND'
       USING ERRCODE = 'P0001',
             HINT = 'No lead exists with the specified lead_id';
@@ -67,6 +73,7 @@ BEGIN
 
   -- THE GUARD: status must be NEW (Part 4, WF-2; Part 10, Gate 4)
   IF _lead.status != 'NEW' THEN
+    -- ⚠️ CO-MAINTENANCE: matched by api-leads-assign/index.ts mapRpcError
     RAISE EXCEPTION 'LEAD_ALREADY_ASSIGNED'
       USING ERRCODE = 'P0002',
             HINT = 'Lead status is ' || _lead.status || ', not NEW. Only NEW leads can be assigned.';

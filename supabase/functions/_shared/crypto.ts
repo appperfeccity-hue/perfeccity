@@ -1,28 +1,38 @@
 /**
- * Mobile number encryption/decryption utilities.
+ * Mobile number encryption/decryption + hashing utilities.
  * 
- * Encryption decision (AD-17):
- * - Algorithm: AES-256-GCM (authenticated encryption)
- * - Key source: MOBILE_ENCRYPTION_KEY environment variable (32-byte hex string)
- * - Key management: Supabase secrets (not in code, not in config.toml)
- * - Encryption happens in Edge Functions (not pgcrypto) because:
- *   1. Key never touches the database — DB-level access can't decrypt
- *   2. Supabase Dashboard SQL queries can't read plaintext mobile
- *   3. Only Edge Functions with the env secret can encrypt/decrypt
- *   4. This matches the spec's intent: mobile_encrypted is opaque at rest
+ * TWO KEYS REQUIRED (separate secrets, separate purposes):
  * 
- * Format: IV (12 bytes) || ciphertext || auth tag (16 bytes), stored as bytea.
- * IV is generated fresh per encryption (never reused).
+ * 1. MOBILE_ENCRYPTION_KEY — AES-256-GCM symmetric encryption
+ *    - Encrypts the mobile number for storage (mobile_encrypted:bytea)
+ *    - Decryption only possible with this key (Edge Function only)
+ *    - Rotation = re-encrypt all rows (no rotation path exists yet — AD-17)
  * 
- * Who can decrypt:
- * - Edge Functions (via MOBILE_ENCRYPTION_KEY env var)
- * - NOT: Supabase Dashboard, direct SQL, any DB-level access
- * - This means: GET /leads/:id must go through the Edge Function to show mobile
+ * 2. MOBILE_HASH_KEY — HMAC-SHA256 keyed hash
+ *    - Produces deterministic hash for dedup/search (mobile_hash:varchar)
+ *    - WITHOUT this key, plain SHA-256 of Indian mobiles is trivially reversible
+ *      (~33 bits entropy, known prefix structure, precomputable in seconds)
+ *    - HMAC makes reversal infeasible without the key
+ *    - Rotation = recompute all hashes (same operational burden as encryption key)
  * 
- * Hash (for dedup/search):
- * - SHA-256 of the plaintext mobile (deterministic, no key needed)
- * - Stored in mobile_hash for uniqueness constraint and duplicate detection
- * - NOT reversible to plaintext (one-way)
+ * Key management (AD-17):
+ * - Both keys stored in Supabase secrets (`supabase secrets set`)
+ * - NEVER in code, config.toml, .env files, or version control
+ * - Generate with: openssl rand -hex 32 (one command per key)
+ * - Keys are 64-char hex strings (32 bytes / 256 bits each)
+ * 
+ * Key rotation story (documented, not solved):
+ * - No online rotation path exists for MVP
+ * - Rotating MOBILE_ENCRYPTION_KEY: all mobile_encrypted rows become undecryptable
+ *   until a migration re-encrypts them (decrypt with old key, re-encrypt with new)
+ * - Rotating MOBILE_HASH_KEY: all mobile_hash values become stale
+ *   (dedup lookups fail until a migration recomputes them)
+ * - Both rotations require downtime or a dual-key window — Layer 2 operational work
+ * - "No rotation plan yet" is a deliberate MVP acceptance, not a gap to discover later
+ * 
+ * Who can decrypt/hash:
+ * - Edge Functions (have both keys via env vars)
+ * - NOT: Supabase Dashboard, direct SQL, DB-level access, pgcrypto
  */
 
 /**
@@ -98,13 +108,45 @@ export async function decryptMobile(encrypted: Uint8Array): Promise<string> {
 }
 
 /**
- * Compute SHA-256 hash of a mobile number (for dedup/search via mobile_hash).
- * Deterministic, no key needed. NOT reversible.
+ * Compute HMAC-SHA256 of a mobile number (for dedup/search via mobile_hash).
+ * 
+ * IMPORTANT: This is HMAC (keyed hash), NOT plain SHA-256.
+ * 
+ * Plain SHA-256 of a 10-digit Indian mobile number has ~33 bits of entropy
+ * with known prefix structure (operator codes, state codes). A precomputed
+ * rainbow table of all plausible +91XXXXXXXXXX numbers would reverse any
+ * plain SHA-256 hash in seconds. HMAC with a secret key makes this infeasible
+ * without the key — an attacker with DB read access sees opaque hashes they
+ * can't reverse without MOBILE_HASH_KEY.
+ * 
+ * Key: MOBILE_HASH_KEY environment variable (separate from encryption key —
+ * different purpose, different rotation implications, defense-in-depth).
+ * 
+ * Deterministic: same input + same key = same hash (required for dedup lookups).
+ * NOT reversible without the key.
  */
 export async function hashMobile(mobile: string): Promise<string> {
+  const hashKeyHex = Deno.env.get('MOBILE_HASH_KEY');
+  if (!hashKeyHex || hashKeyHex.length !== 64) {
+    throw new Error(
+      'MOBILE_HASH_KEY must be set as a 64-character hex string (256 bits). ' +
+      'Generate with: openssl rand -hex 32. ' +
+      'This is separate from MOBILE_ENCRYPTION_KEY (different purpose).'
+    );
+  }
+
+  const keyBytes = hexToBytes(hashKeyHex);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
   const data = new TextEncoder().encode(mobile);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  return bytesToHex(new Uint8Array(hashBuffer));
+  const signature = await crypto.subtle.sign('HMAC', key, data);
+  return bytesToHex(new Uint8Array(signature));
 }
 
 // ============================================================
