@@ -35,6 +35,20 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 
 ---
 
+## Cross-AD Interactions (reviewed end-to-end after Sprint 1 completion)
+
+Checked for contradictions or unintended coupling between all 18 decisions:
+
+- **AD-7 × AD-9:** Intentionally coupled. Unregistered hook + no user_metadata fallback = fail closed (all access denied). AD-7's negative test catches this pre-deployment.
+- **AD-13 × AD-14:** Both hit Postgres per login (~3 round trips total). MVP-acceptable latency.
+- **AD-2 × AD-3:** Asymmetry — staff use `user_id = auth.uid()` directly; customers use a separate `auth_user_id` column. Sprint 6 customer RLS needs its own helper (noted in Pending), not `auth.consultant_project_ids()`.
+- **AD-2 × AD-5:** RPC stores `p_manager_id` from the Edge Function's `rbac.auth.userId`, which equals `auth.uid()` (AD-2). Consistent only if all staff are created via T2. Protected by AD-15's invariant ("Auth users created outside T2 is an operational error").
+- **AD-8 × AD-11:** Maintenance coupling — every new helper function needs a GRANT. Grows linearly with sprints. Documented in AD-11 trade-off.
+
+No contradictions found. No reversals needed.
+
+---
+
 ## Pending (Future Sprints)
 
 _Decisions that are expected to be needed but haven't been made yet._
