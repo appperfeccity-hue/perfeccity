@@ -58,6 +58,16 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 
 ---
 
+## Sprint 5 Decisions
+
+| ID | Decision | Rationale | Trade-off | Frozen? |
+|---|---|---|---|---|
+| AD-28 | Quotation seal uses plain SHA-256, independently auditable (not HMAC) | Primary purpose is auditability and reproducibility. `sha256_hash = SHA256(canonical_json(seal_payload))` must be independently recomputable from stored data alone, without the live engine or any secret material. | Does NOT prevent forgery by someone with DB write access (they could edit both seal_payload and sha256_hash consistently). Tamper-evidence against privileged insiders would require HMAC or digital signatures — deliberately Layer 2. | Yes |
+| AD-29 | Quotation engine Steps 4-5 use `unit_cost_paise` (not `sell_price_paise`) — SI-5 CONFIRMED | **What triggered the question:** `product_library` stores both columns with real, independently-set values (`WLP-WPC-CLS-OAK-001`: cost=32000, sell=42000 → 31.25% markup, NOT 25%). If sell prices were derived from cost+25%, they'd be uniform — they're not. Part 8 Step 4 literally says `×unit_cost`. **Confirmed by Akshay:** Steps 4-5 use `unit_cost_paise`. Step 12's `ROUND(subtotal×0.25)` is the margin that transforms cost into customer-facing price. `sell_price_paise` is NOT consumed by the formal quotation engine — it's available for Admin reference and potentially the price-preview approximation (T10, separate question). **Consequence for the regression fixture (Space 1, 18 panels):** `18 × 32000 = 576,000` (not `18 × 42000 = 756,000`). A 31% difference in the quoted panel line. | `sell_price_paise` column exists but is confirmed as NOT authoritative for the sealed quotation. Its purpose is reference/preview, not formal pricing. A future T10 implementation may use it for quick display. | Yes |
+| AD-30 | Rounding is `Math.round()` (standard half-up, nearest paise) — SI-7/8 CONFIRMED | **What triggered the question:** Steps 12-13 both say `ROUND(...)` without specifying precision or direction. Indian GST calculations sometimes have mandated rounding rules. Banker's rounding is common in financial systems. **Confirmed by Akshay:** Standard `Math.round()` (half-up), to nearest paise, no special GST-compliance rule for MVP. Rounding happens at each `ROUND()` step as literally written in Part 8 (Step 12 rounds the margin result, Step 13 rounds the GST result). | Not GST-compliant if regulations require a specific rounding convention. Acceptable for MVP. If compliance requirements surface later, this is a one-line change (swap `Math.round` for the mandated function) + re-baseline regression values. | Yes |
+
+---
+
 ## Cross-AD Interactions (reviewed end-to-end after Sprint 1 completion)
 
 Checked for contradictions or unintended coupling between all 18 decisions:
