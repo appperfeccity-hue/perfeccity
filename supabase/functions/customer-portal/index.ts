@@ -177,6 +177,17 @@ async function handleApprove(
   }
 
   // Guard: project must be QUOTED
+  // Idempotent: if already PAYMENT_PENDING, return success (double-tap safe)
+  if (project.status === 'PAYMENT_PENDING') {
+    return success({
+      project_id: projectId,
+      previous_status: 'QUOTED',
+      new_status: 'PAYMENT_PENDING',
+      message: 'Quotation already approved. You can proceed to payment.',
+      already_approved: true,
+    });
+  }
+
   if (project.status !== 'QUOTED') {
     return error('INVALID_STATUS',
       `Project must be in QUOTED status to approve (current: ${project.status})`, 422);
