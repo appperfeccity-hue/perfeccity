@@ -103,11 +103,36 @@ persistence — not just unit tests exercising pure functions in isolation.
 
 ## Known Remaining Gaps (explicitly documented, not blocking Sprint 6)
 
-1. ~~**RLS enforcement under real JWT**~~: **CLOSED (V7).** Tested via `SET LOCAL ROLE authenticated`
-   with `request.jwt.claims` set to simulate real JWT context. Consultant B (non-owner)
+1. ~~**RLS enforcement under real JWT**~~: **CLOSED in two parts (V7a + V7b).**
+
+   **V7a — Policy enforcement (proven):** Tested via `SET LOCAL ROLE authenticated` with
+   `request.jwt.claims` set to simulate real JWT context. Consultant B (non-owner)
    sees **0 rows** across projects, leads, configuration_line_items, quotation_snapshots.
-   Consultant A (owner) sees only their own data. ADMIN sees everything. Tenant isolation
-   PROVEN across 4 critical tables with 3 different role contexts.
+   Consultant A (owner) sees only their own data. ADMIN sees everything. This proves:
+   *if a JWT with the correct claim shape arrives, RLS correctly isolates by tenant.*
+
+   **V7b — Hook claim generation (proven):** `custom_access_token_hook` invoked directly
+   with synthetic Supabase Auth event payloads. Verified it produces:
+   - SALESPERSON → `app_metadata.role = "SALESPERSON"`, `app_metadata.user_status = "ACTIVE"`
+   - ADMIN → `app_metadata.role = "ADMIN"`, `app_metadata.user_status = "ACTIVE"`
+   - Unknown user (not in public.users) → `app_metadata.role = "CUSTOMER"`
+   This proves: *the hook produces the exact claim shape that RLS policies read from.*
+
+   **Claim shape alignment confirmed:** Hook writes to `claims.app_metadata.role`;
+   `user_role()` reads from `auth.jwt() -> 'app_metadata' ->> 'role'`; V7a test
+   injected claims at the same path. All three reference the same JSONB location.
+
+   **What remains untested (honest scope boundary):** The one layer NOT exercised
+   is Supabase Auth's internal mechanism for *calling* the hook during token issuance.
+   Specifically: whether the hook is correctly *registered* in the hosted project's Auth
+   configuration (Dashboard → Auth → Hooks) such that it's actually invoked on every
+   `signInWithPassword()` call. This is a platform-configuration concern (one checkbox
+   in the Supabase dashboard), not a code-correctness concern — the hook's logic is
+   proven correct, and the policy enforcement is proven correct, but the wiring between
+   "Supabase Auth issues a token" and "this hook function gets called" depends on a
+   dashboard configuration step that cannot be verified from this sandbox. This is
+   the same category as "is the Edge Function actually deployed?" — infrastructure
+   wiring, not code logic.
 
 2. **Deno Edge Function runtime**: The `api-quotation`, `api-review`, and
    `api-consultation` Edge Functions have not been DEPLOYED and called via HTTP.
