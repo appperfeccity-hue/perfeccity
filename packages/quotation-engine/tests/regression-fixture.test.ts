@@ -104,38 +104,45 @@ const FIXTURE_INPUT: QuotationInput = {
 const EXPECTED_STEP_4 = 1_272_000;
 
 /**
- * Step 5 trim: Σ(qty × unit_cost)
- *   Space1: 41.338582677165356 × 4800 = 198,425.1968503937
- *   Space2: 37.40157480314961 × 4800  = 179,527.55905511812
- *   Space3: 33.46456692913386 × 4500  = 150,590.55118110238
- *   TOTAL = 528,543.3070866142
+ * Step 5 trim: Σ Math.round(qty × unit_cost) per line
+ *   Space1: Math.round(41.338582677165356 × 4800) = 198,425
+ *   Space2: Math.round(37.40157480314961 × 4800)  = 179,528
+ *   Space3: Math.round(33.46456692913386 × 4500)  = 150,591
+ *   TOTAL = 528,544
  */
-const EXPECTED_STEP_5_TRIM = 41.338582677165356 * 4800 + 37.40157480314961 * 4800 + 33.46456692913386 * 4500;
+const EXPECTED_STEP_5_TRIM = Math.round(41.338582677165356 * 4800)
+  + Math.round(37.40157480314961 * 4800)
+  + Math.round(33.46456692913386 * 4500);
 
 /**
- * Step 5 consumables: Σ(qty × unit_cost)
- *   Space1 R6: 9.72 × 8500 = 82,620
- *   Space1 R7 BSB: 9.72 × 8500 = 82,620
- *   Space1 R7 ADH: 9.72 × 12000 = 116,640
- *   Space2 R7 ADH: 8.1 × 12000 = 97,200
- *   Space3 R6: 6.48 × 8500 = 55,080
- *   Space3 R7 ADH: 6.48 × 12000 = 77,760
- *   Space3 R7 BCK: 6.48 × 8500 = 55,080
+ * Step 5 consumables: Σ Math.round(qty × unit_cost) per line
+ *   Space1 R6: Math.round(9.72 × 8500) = 82,620
+ *   Space1 R7 BSB: Math.round(9.72 × 8500) = 82,620
+ *   Space1 R7 ADH: Math.round(9.72 × 12000) = 116,640
+ *   Space2 R7 ADH: Math.round(8.1 × 12000) = 97,200
+ *   Space3 R6: Math.round(6.48 × 8500) = 55,080
+ *   Space3 R7 ADH: Math.round(6.48 × 12000) = 77,760
+ *   Space3 R7 BCK: Math.round(6.48 × 8500) = 55,080
  *   TOTAL = 567,000
  */
-const EXPECTED_STEP_5_CONSUMABLE = 567_000;
+const EXPECTED_STEP_5_CONSUMABLE =
+  Math.round(9.72 * 8500) + Math.round(9.72 * 8500) + Math.round(9.72 * 12000)
+  + Math.round(8.1 * 12000)
+  + Math.round(6.48 * 8500) + Math.round(6.48 * 12000) + Math.round(6.48 * 8500);
 
 const EXPECTED_STEP_5_LIGHTING = 0;
 const EXPECTED_STEP_5_NON_PANEL = EXPECTED_STEP_5_TRIM + EXPECTED_STEP_5_LIGHTING + EXPECTED_STEP_5_CONSUMABLE;
 
 /**
- * Step 8: labour = Σ(net_area_sqm × rate)
- *   Space1: 9.72 sqm × 25000 (FRAME_BASED) = 243,000
- *   Space2: 8.1 sqm × 15000 (DIRECT) = 121,500
- *   Space3: 6.48 sqm × 15000 (DIRECT) = 97,200
+ * Step 8: labour = Σ Math.round(net_area_sqm × rate) per space
+ *   Space1: Math.round(9.72 × 25000) = 243,000
+ *   Space2: Math.round(8.1 × 15000) = 121,500
+ *   Space3: Math.round(6.48 × 15000) = 97,200
  *   TOTAL = 461,700
  */
-const EXPECTED_STEP_8 = 461_700;
+const EXPECTED_STEP_8 = Math.round((9720000/1000000) * 25000)
+  + Math.round((8100000/1000000) * 15000)
+  + Math.round((6480000/1000000) * 15000);
 
 /** Step 9: transport = 500,000 (flat) */
 const EXPECTED_STEP_9 = 500_000;
@@ -143,16 +150,16 @@ const EXPECTED_STEP_9 = 500_000;
 /** Step 10: furniture = 0 (none in fixture) */
 const EXPECTED_STEP_10 = 0;
 
-/** Step 11: subtotal = 4 + 5 + 8 + 9 + 10 */
+/** Step 11: subtotal = 4 + 5 + 8 + 9 + 10 (all integer) */
 const EXPECTED_STEP_11 = EXPECTED_STEP_4 + EXPECTED_STEP_5_NON_PANEL + EXPECTED_STEP_8 + EXPECTED_STEP_9 + EXPECTED_STEP_10;
 
-/** Step 12: margin = Math.round(subtotal × 0.25) */
+/** Step 12: margin = Math.round(subtotal × 0.25); pre_gst = subtotal + margin (integer + integer) */
 const EXPECTED_STEP_12_MARGIN = Math.round(EXPECTED_STEP_11 * 0.25);
 const EXPECTED_STEP_12_PRE_GST = EXPECTED_STEP_11 + EXPECTED_STEP_12_MARGIN;
 
-/** Step 13: gst = Math.round(pre_gst × 0.18), grand = Math.round(pre_gst + gst) */
+/** Step 13: gst = Math.round(pre_gst × 0.18); grand = pre_gst + gst (integer + integer) */
 const EXPECTED_STEP_13_GST = Math.round(EXPECTED_STEP_12_PRE_GST * 0.18);
-const EXPECTED_GRAND_TOTAL = Math.round(EXPECTED_STEP_12_PRE_GST + EXPECTED_STEP_13_GST);
+const EXPECTED_GRAND_TOTAL = EXPECTED_STEP_12_PRE_GST + EXPECTED_STEP_13_GST;
 
 // ============================================================
 // TESTS
@@ -168,20 +175,23 @@ describe('Quotation Engine: 3-Space Regression Fixture', () => {
   });
 
   describe('Step 5: Non-panel costs (trim + consumables)', () => {
-    it('trim_total matches hand-computed value', () => {
-      expect(result.step_breakdown.step_5_trim_total_paise).toBeCloseTo(EXPECTED_STEP_5_TRIM, 5);
+    it('trim_total = 528,544 paise (per-line Math.round, platform rule)', () => {
+      expect(result.step_breakdown.step_5_trim_total_paise).toBe(EXPECTED_STEP_5_TRIM);
+      expect(EXPECTED_STEP_5_TRIM).toBe(528544); // frozen
     });
 
     it('consumable_total = 567,000 paise (all integer multiplications)', () => {
       expect(result.step_breakdown.step_5_consumable_total_paise).toBe(EXPECTED_STEP_5_CONSUMABLE);
+      expect(EXPECTED_STEP_5_CONSUMABLE).toBe(567000); // frozen
     });
 
     it('lighting_total = 0 (no lighting items in fixture)', () => {
       expect(result.step_breakdown.step_5_lighting_total_paise).toBe(EXPECTED_STEP_5_LIGHTING);
     });
 
-    it('non_panel_total = trim + lighting + consumable', () => {
-      expect(result.step_breakdown.step_5_non_panel_total_paise).toBeCloseTo(EXPECTED_STEP_5_NON_PANEL, 5);
+    it('non_panel_total = 1,095,544 paise (trim + lighting + consumable)', () => {
+      expect(result.step_breakdown.step_5_non_panel_total_paise).toBe(EXPECTED_STEP_5_NON_PANEL);
+      expect(EXPECTED_STEP_5_NON_PANEL).toBe(1095544); // frozen
     });
   });
 
@@ -216,8 +226,10 @@ describe('Quotation Engine: 3-Space Regression Fixture', () => {
   });
 
   describe('Step 11: Subtotal (4+5+8+9+10)', () => {
-    it('subtotal matches hand-computed sum', () => {
-      expect(result.step_breakdown.step_11_subtotal_paise).toBeCloseTo(EXPECTED_STEP_11, 5);
+    it('subtotal = 3,329,244 paise (all integers sum to integer)', () => {
+      expect(result.step_breakdown.step_11_subtotal_paise).toBe(EXPECTED_STEP_11);
+      expect(EXPECTED_STEP_11).toBe(3329244); // frozen
+      expect(Number.isInteger(result.step_breakdown.step_11_subtotal_paise)).toBe(true);
     });
   });
 
@@ -227,8 +239,10 @@ describe('Quotation Engine: 3-Space Regression Fixture', () => {
       expect(EXPECTED_STEP_12_MARGIN).toBe(832311); // frozen
     });
 
-    it('pre_gst = subtotal + margin', () => {
-      expect(result.step_breakdown.step_12_pre_gst_total_paise).toBeCloseTo(EXPECTED_STEP_12_PRE_GST, 5);
+    it('pre_gst = subtotal + margin = 4,161,555 (integer + integer)', () => {
+      expect(result.step_breakdown.step_12_pre_gst_total_paise).toBe(EXPECTED_STEP_12_PRE_GST);
+      expect(EXPECTED_STEP_12_PRE_GST).toBe(4161555); // frozen
+      expect(Number.isInteger(result.step_breakdown.step_12_pre_gst_total_paise)).toBe(true);
     });
   });
 
@@ -238,9 +252,10 @@ describe('Quotation Engine: 3-Space Regression Fixture', () => {
       expect(EXPECTED_STEP_13_GST).toBe(749080); // frozen
     });
 
-    it('grand_total = Math.round(pre_gst + gst) = 4,910,634', () => {
+    it('grand_total = pre_gst + gst = 4,910,635 (integer + integer, no extra round needed)', () => {
       expect(result.step_breakdown.step_13_grand_total_paise).toBe(EXPECTED_GRAND_TOTAL);
-      expect(EXPECTED_GRAND_TOTAL).toBe(4910634); // frozen
+      expect(EXPECTED_GRAND_TOTAL).toBe(4910635); // frozen
+      expect(Number.isInteger(result.step_breakdown.step_13_grand_total_paise)).toBe(true);
     });
   });
 
@@ -254,8 +269,25 @@ describe('Quotation Engine: 3-Space Regression Fixture', () => {
       expect(result.validation_errors).toEqual([]);
     });
 
-    it('FROZEN grand_total_paise = 4,910,634 (regression baseline)', () => {
-      expect(result.grand_total_paise).toBe(4910634);
+    it('FROZEN grand_total_paise = 4,910,635 (regression baseline)', () => {
+      expect(result.grand_total_paise).toBe(4910635);
+    });
+
+    it('ALL intermediate paise values are integers (platform rule: money never floating)', () => {
+      const b = result.step_breakdown;
+      expect(Number.isInteger(b.step_4_wall_panel_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_5_trim_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_5_lighting_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_5_consumable_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_5_non_panel_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_8_labour_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_9_transport_paise)).toBe(true);
+      expect(Number.isInteger(b.step_10_furniture_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_11_subtotal_paise)).toBe(true);
+      expect(Number.isInteger(b.step_12_margin_paise)).toBe(true);
+      expect(Number.isInteger(b.step_12_pre_gst_total_paise)).toBe(true);
+      expect(Number.isInteger(b.step_13_gst_paise)).toBe(true);
+      expect(Number.isInteger(b.step_13_grand_total_paise)).toBe(true);
     });
   });
 
@@ -323,13 +355,13 @@ describe('Quotation Engine: Furniture fixture', () => {
 
     // Subtotal increases by 430000
     const expectedSubtotal = EXPECTED_STEP_11 + 430000;
-    expect(result.step_breakdown.step_11_subtotal_paise).toBeCloseTo(expectedSubtotal, 5);
+    expect(result.step_breakdown.step_11_subtotal_paise).toBe(expectedSubtotal);
 
     // Grand total recalculated with furniture
     const margin = Math.round(expectedSubtotal * 0.25);
     const preGst = expectedSubtotal + margin;
     const gst = Math.round(preGst * 0.18);
-    const grand = Math.round(preGst + gst);
+    const grand = preGst + gst;
     expect(result.grand_total_paise).toBe(grand);
   });
 });

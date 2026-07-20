@@ -38,34 +38,43 @@ export function runQuotationEngine(input: QuotationInput): QuotationOutput {
   const { spaces, line_items, furniture, pricing_settings } = input;
 
   // ------------------------------------------------------------------
+  // PLATFORM RULE: "Money in paise (BIGINT) — never floating point"
+  // Each line item's cost contribution = Math.round(quantity × unit_cost_paise)
+  // This ensures all intermediate money values are integer paise.
+  // Without this, fractional trim quantities (41.338... × 4800 = 198425.19...)
+  // would produce fractional paise, violating the platform rule.
+  // ------------------------------------------------------------------
+
+  // ------------------------------------------------------------------
   // Step 4: Panel cost = Σ (quantity × unit_cost_paise) for WALL_PANEL items
   // The CEIL(area/(w×h)) was already done by the config engine (R4).
-  // The persisted line_items already have the integer panel quantity.
+  // Panel quantity is always integer, so Math.round is a no-op here — but
+  // applied uniformly for correctness guarantee.
   // ------------------------------------------------------------------
   const wallPanelItems = line_items.filter(li => li.group_name === 'WALL_PANEL');
   const step_4_wall_panel_total_paise = wallPanelItems.reduce(
-    (sum, li) => sum + li.quantity * li.unit_cost_paise,
+    (sum, li) => sum + Math.round(li.quantity * li.unit_cost_paise),
     0
   );
 
   // ------------------------------------------------------------------
   // Step 5: Non-panel costs (trims + lighting + consumables)
-  // Each line item's cost = quantity × unit_cost_paise
+  // Each line item's cost = Math.round(quantity × unit_cost_paise)
   // ------------------------------------------------------------------
   const trimItems = line_items.filter(li => li.group_name === 'TRIM');
   const lightingItems = line_items.filter(li => li.group_name === 'LIGHTING');
   const consumableItems = line_items.filter(li => li.group_name === 'CONSUMABLE');
 
   const step_5_trim_total_paise = trimItems.reduce(
-    (sum, li) => sum + li.quantity * li.unit_cost_paise,
+    (sum, li) => sum + Math.round(li.quantity * li.unit_cost_paise),
     0
   );
   const step_5_lighting_total_paise = lightingItems.reduce(
-    (sum, li) => sum + li.quantity * li.unit_cost_paise,
+    (sum, li) => sum + Math.round(li.quantity * li.unit_cost_paise),
     0
   );
   const step_5_consumable_total_paise = consumableItems.reduce(
-    (sum, li) => sum + li.quantity * li.unit_cost_paise,
+    (sum, li) => sum + Math.round(li.quantity * li.unit_cost_paise),
     0
   );
   const step_5_non_panel_total_paise =
@@ -114,8 +123,9 @@ export function runQuotationEngine(input: QuotationInput): QuotationOutput {
   }
 
   // ------------------------------------------------------------------
-  // Step 8: Labour = Σ (net_area_sqm × LABOUR_RATE[installation_type])
+  // Step 8: Labour = Σ Math.round(net_area_sqm × LABOUR_RATE[installation_type])
   // net_area_sqm = net_area_sqmm / 1,000,000
+  // Per-space labour rounded to integer paise (platform rule).
   // ------------------------------------------------------------------
   let step_8_labour_total_paise = 0;
   for (const space of spaces) {
@@ -124,7 +134,7 @@ export function runQuotationEngine(input: QuotationInput): QuotationOutput {
       space.installation_type === 'FRAME_BASED'
         ? pricing_settings.labour_frame_paise_per_sqm
         : pricing_settings.labour_direct_paise_per_sqm;
-    step_8_labour_total_paise += netAreaSqm * rate;
+    step_8_labour_total_paise += Math.round(netAreaSqm * rate);
   }
 
   // ------------------------------------------------------------------
@@ -160,13 +170,12 @@ export function runQuotationEngine(input: QuotationInput): QuotationOutput {
   // ------------------------------------------------------------------
   // Step 13: GST = ROUND(pre_gst × 0.18), grand_total = pre_gst + GST
   // AD-30: Math.round() (half-up, nearest paise)
-  // Final grand_total is also rounded to integer paise (BIGINT storage).
-  // This is necessary because fractional trim quantities (41.34 rft × 4800)
-  // produce non-integer subtotals. The spec's BIGINT column type makes
-  // integer storage implicit. The final round is at most ±0.5 paise.
+  // Since pre_gst is guaranteed integer (subtotal integer + margin integer),
+  // and gst is Math.round'd to integer, grand_total is naturally integer.
+  // No additional rounding needed (platform rule satisfied by construction).
   // ------------------------------------------------------------------
   const step_13_gst_paise = Math.round(step_12_pre_gst_total_paise * GST_RATE);
-  const step_13_grand_total_paise = Math.round(step_12_pre_gst_total_paise + step_13_gst_paise);
+  const step_13_grand_total_paise = step_12_pre_gst_total_paise + step_13_gst_paise;
 
   // ------------------------------------------------------------------
   // Build output
