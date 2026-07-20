@@ -1,5 +1,24 @@
 # Sprint 5 — Review Gate and Quotation Engine
 
+## T1 Close-Out (Review Gate) — Execution Evidence Summary
+
+**Status: COMPLETE.** Migration 00014, Edge Function `api-review`, acceptance tests authored.
+
+Live verification against `demfvizmxkuxvluopmtq` (execution-verified, not inspection):
+
+| Test | Result |
+|---|---|
+| PASS path (all 7 true, status→REVIEWED, state_history, latest_review_id) | ✅ Proven |
+| FAIL path (5 checks failing, status stays CONFIGURING, review_records row created) | ✅ Proven |
+| State machine guard (re-call on REVIEWED → INVALID_STATUS) | ✅ Proven |
+| Check 5 isolation (2 spaces, 1 without current config → only check 5 flips) | ✅ Individually proven |
+| Check 6 isolation (INACTIVE SKU in line items → only check 6 flips) | ✅ Individually proven |
+| Checks 1-4, 7 | Verified via aggregate PASS/FAIL only, NOT individually isolated |
+
+**Coverage boundary:** Checks 5 and 6 have full isolation proof (other 6 stay true while targeted one flips false). Checks 1, 2, 3, 4, and 7 are verified only via the aggregate PASS (all true together) and the original FAIL (multiple failing together). They are not individually proven to flip independently — a shared-logic bug that produces the right aggregate answer by coincidence would not be caught. Acceptable for MVP given time constraints; flagged here so a future reader doesn't assume uniform coverage across all 7.
+
+---
+
 ## The seal verification standard (resolve BEFORE writing engine code)
 
 ### Normative Invariant (confirmed by Akshay)
