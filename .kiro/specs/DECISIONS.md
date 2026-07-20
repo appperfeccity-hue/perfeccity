@@ -94,6 +94,36 @@ No contradictions found. No reversals needed.
 - SI-2: PER_RFT_HEIGHT `/1000` vs `/304.8` → **CONFIRMED (/1000, AD-23).** Spec literal is authoritative. The naming inconsistency ("RFT" but produces meters) is documented, not fixed. Any change to `/304.8` requires a formal spec revision.
 - SI-3: R5 "matching" — runtime search vs pre-linked lookup → **CONFIRMED (pre-linked + runtime validation, AD-24).** Engine reads template's TRIM design_elements (pre-selected by Designer), does NOT search product_library. Engine DOES validate colour/finish compatibility at runtime. "Matching" = validate the pre-link, not discover a new one.
 - SI-4: Engine-to-Edge-Function bridge → **CONFIRMED (Option E: esbuild bundle, AD-26).** Tested source compiled into single ESM file via esbuild. Bundle produces identical frozen hash. Committed to repo, CI verifies staleness.
+
+**Sprint 4 Boundary-Fidelity Proof (T9, executed against live Supabase):**
+
+Evidence: persist_configuration RPC called via MCP against project `demfvizmxkuxvluopmtq` (Postgres 17, ap-south-1).
+
+What was PROVEN:
+- Engine hash = DB stored hash = frozen Gate 1 baseline (`f8156a7e...`) ✅
+- Trim quantity stored as `41.338582677165356` (full precision, NUMERIC column with no scale limit) ✅
+- Column type verified: `data_type = 'numeric'`, `numeric_precision = null`, `numeric_scale = null` (arbitrary precision) ✅
+- The automated engine→RPC path preserves full floating-point precision ✅
+
+What the FIRST FAILURE taught (precision important):
+- Manual SQL call with truncated qty `41.3386` → produced DIFFERENT hash on rehash
+- This validates the test's sensitivity: it DETECTS precision loss
+- The bug was in the TEST SETUP (hand-typed value), NOT in the production code path
+- The production path (engine output → JSON → RPC → DECIMAL) was never broken
+
+What this does NOT prove (remaining gaps):
+- Full 36-table migration suite has never been applied end-to-end to this project
+  (only 5 tables + 1 RPC were created for this specific test)
+- Sprint 1–3 RLS policies, RPCs (assign_lead, approve_sku), and guard endpoints
+  have not been executed against live infrastructure
+- Stage 7's actual Edge Function import of engine-bundle.js in Deno runtime untested
+  (the proof uses Node.js bundle execution, not Deno Edge Function execution)
+- Concurrency (one_current_config_per_space under parallel requests) not load-tested
+
+Recommended next steps (before Sprint 5):
+- Apply full migration suite (00001–00013) to the live project
+- Execute Sprint 1–3 RPC tests (assign_lead_to_consultant, approve_sku_proposal) against live DB
+- Deploy an Edge Function using engine-bundle.js and verify Deno runtime executes correctly
 - Test specs (T9) are AUTHORED (assertions documented) but NOT EXECUTED (no live infra in this sandbox, placeholder bodies only)
 - "0 bugs found" means "0 bugs found via conversational Q&A + checklist" — NOT "0 bugs found by running tests"
 - The checklist addresses STRUCTURAL correctness (grants, atomicity, FKs) — Sprint 4 needs COMPUTATIONAL correctness verification (golden fixtures, formula tests, hash determinism) which the current 7-category checklist does not cover
