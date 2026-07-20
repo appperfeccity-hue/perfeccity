@@ -2,6 +2,7 @@
  * Quotation Engine — public API
  */
 export { runQuotationEngine } from './engine';
+export { computeQuotationSeal } from './seal';
 export type {
   QuotationInput,
   QuotationOutput,
@@ -11,3 +12,4 @@ export type {
   FurnitureItem,
   PricingSettings,
 } from './types';
+export type { SealInput, SealOutput } from './seal';
