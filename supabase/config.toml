@@ -46,7 +46,7 @@ enable_confirmations = false
 # For hosted environments, this must ALSO be configured in Dashboard → Auth → Hooks.
 [auth.hook.custom_access_token]
 enabled = true
-uri = "pg-functions://postgres/auth/custom_access_token_hook"
+uri = "pg-functions://postgres/public/custom_access_token_hook"
 
 [storage]
 enabled = true
