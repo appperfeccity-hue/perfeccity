@@ -238,17 +238,145 @@ async function handleApprove(
 }
 
 // ============================================================
-// T6: Pay (Razorpay order creation) — placeholder
+// T6: Pay (Razorpay order creation)
 // ============================================================
 
 async function handlePay(
-  _admin: SupabaseClient,
+  admin: SupabaseClient,
   projectId: string,
-  _customerId: string
+  customerId: string
 ): Promise<Response> {
-  // T6 implementation will create Razorpay order
-  // For now: return placeholder indicating this endpoint exists
-  return error('NOT_IMPLEMENTED', 'Payment endpoint (T6) not yet implemented', 501);
+  // Guard: project must be PAYMENT_PENDING
+  const { data: project } = await admin
+    .from('projects')
+    .select('status, latest_snapshot_id')
+    .eq('project_id', projectId)
+    .single();
+
+  if (!project) {
+    return error('PROJECT_NOT_FOUND', 'Project not found', 404);
+  }
+
+  if (project.status !== 'PAYMENT_PENDING') {
+    return error('INVALID_STATUS',
+      `Project must be in PAYMENT_PENDING status to pay (current: ${project.status})`, 422);
+  }
+
+  // Get the sealed quotation's grand_total (immutable, customer can't influence amount)
+  const { data: snapshot } = await admin
+    .from('quotation_snapshots')
+    .select('grand_total_paise')
+    .eq('snapshot_id', project.latest_snapshot_id)
+    .single();
+
+  if (!snapshot || !snapshot.grand_total_paise) {
+    return error('QUOTATION_NOT_FOUND', 'No sealed quotation found', 404);
+  }
+
+  const amountPaise = snapshot.grand_total_paise;
+
+  // Idempotency: check if payment already exists for this project
+  const { data: existingPayment } = await admin
+    .from('advance_payments')
+    .select('payment_id, razorpay_order_id, status')
+    .eq('project_id', projectId)
+    .single();
+
+  if (existingPayment) {
+    if (existingPayment.status === 'CONFIRMED') {
+      return success({
+        project_id: projectId,
+        status: 'ALREADY_PAID',
+        message: 'Payment has already been confirmed.',
+      });
+    }
+    if (existingPayment.razorpay_order_id) {
+      // PENDING with existing order — return the same order_id (idempotent)
+      return success({
+        project_id: projectId,
+        razorpay_order_id: existingPayment.razorpay_order_id,
+        amount_paise: amountPaise,
+        amount_rupees: (amountPaise / 100).toFixed(2),
+        currency: 'INR',
+        method: 'upi',
+        message: 'Payment order already created. Complete payment via UPI.',
+        idempotent: true,
+      });
+    }
+  }
+
+  // Create Razorpay order
+  // NOTE: Requires RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET as Supabase secrets
+  const razorpayKeyId = Deno.env.get('RAZORPAY_KEY_ID');
+  const razorpayKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET');
+
+  if (!razorpayKeyId || !razorpayKeySecret) {
+    console.error('Razorpay credentials not configured');
+    return error('PAYMENT_CONFIG_ERROR', 'Payment gateway not configured', 500);
+  }
+
+  // Razorpay Orders API: POST https://api.razorpay.com/v1/orders
+  const razorpayResponse = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Basic ' + btoa(`${razorpayKeyId}:${razorpayKeySecret}`),
+    },
+    body: JSON.stringify({
+      amount: amountPaise,  // Razorpay uses paise
+      currency: 'INR',
+      receipt: `project_${projectId}`,
+      payment_capture: 1,  // auto-capture on successful payment
+      notes: {
+        project_id: projectId,
+        customer_id: customerId,
+      },
+    }),
+  });
+
+  if (!razorpayResponse.ok) {
+    const errBody = await razorpayResponse.text();
+    console.error('Razorpay order creation failed:', razorpayResponse.status, errBody);
+    return error('PAYMENT_GATEWAY_ERROR', 'Failed to create payment order', 502);
+  }
+
+  const razorpayOrder = await razorpayResponse.json() as {
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+  };
+
+  // Persist advance_payments row (or update existing PENDING row)
+  if (existingPayment) {
+    await admin
+      .from('advance_payments')
+      .update({
+        razorpay_order_id: razorpayOrder.id,
+        amount_paise: amountPaise,
+      })
+      .eq('payment_id', existingPayment.payment_id);
+  } else {
+    await admin
+      .from('advance_payments')
+      .insert({
+        project_id: projectId,
+        amount_paise: amountPaise,
+        method: 'UPI',
+        status: 'PENDING',
+        razorpay_order_id: razorpayOrder.id,
+      });
+  }
+
+  return success({
+    project_id: projectId,
+    razorpay_order_id: razorpayOrder.id,
+    amount_paise: amountPaise,
+    amount_rupees: (amountPaise / 100).toFixed(2),
+    currency: 'INR',
+    method: 'upi',
+    message: 'Payment order created. Complete payment via UPI.',
+  }, 201);
 }
 
 // ============================================================
