@@ -146,6 +146,16 @@ Recommended next steps (before Sprint 5):
 
 _Decisions that are expected to be needed but haven't been made yet._
 
+- **Sprint 5 (T10):** Price-preview endpoint — does it use `sell_price_paise` directly
+  for quick Consultant display, or `unit_cost_paise + margin` like the formal sealed
+  quotation engine? Context: AD-29 confirmed the *formal* 13-step engine uses
+  `unit_cost_paise`. But `sell_price_paise` exists as a per-SKU Admin-set value that
+  could serve as a fast approximate preview without running the full engine. The two
+  approaches produce different numbers (e.g., panel: cost×qty = 576,000 vs sell×qty =
+  756,000 for the Space 1 fixture). **Status:** Flagged to Akshay as a fast yes/no.
+  Not blocking T1–T9; only blocks T10 implementation. If Akshay answers "use
+  sell_price_paise directly," T10 is trivial (sum from configuration_line_items). If
+  "use cost+margin," T10 must replicate Steps 4-5+11+12+13 or call the engine.
 - **Sprint 3:** `payment_method_enum` — whether to add `NET_BANKING`/`EMI` (Part 15, item 7)
 - **Sprint 4:** Stage 4 resubmission after downstream data exists — **RESOLVED in Sprint 4 T0:**
   `replace_project_spaces` RPC now checks for child rows before DELETE. If any
