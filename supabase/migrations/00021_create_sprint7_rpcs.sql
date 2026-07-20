@@ -103,19 +103,19 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_project_status TEXT;
+  v_project RECORD;
   v_schedule_id UUID;
 BEGIN
   -- Guard: project must be APPROVED or later
-  SELECT status INTO v_project_status
+  SELECT status, consultant_id INTO v_project
     FROM projects WHERE project_id = p_project_id;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'PROJECT_NOT_FOUND: %', p_project_id;
   END IF;
 
-  IF v_project_status NOT IN ('APPROVED', 'ORDERED', 'IN_PRODUCTION') THEN
-    RAISE EXCEPTION 'PAYMENT_NOT_CONFIRMED: Project must be APPROVED (or later) to schedule installation (current: %)', v_project_status;
+  IF v_project.status NOT IN ('APPROVED', 'ORDERED', 'IN_PRODUCTION') THEN
+    RAISE EXCEPTION 'PAYMENT_NOT_CONFIRMED: Project must be APPROVED (or later) to schedule installation (current: %)', v_project.status;
     -- ⚠️ CO-MAINTENANCE: matched by supabase/functions/api-installation/index.ts
   END IF;
 
@@ -144,13 +144,15 @@ BEGIN
          updated_at = now()
    WHERE project_id = p_project_id;
 
-  -- Notification: customer
-  INSERT INTO notifications (recipient_id, type, message)
-  SELECT cpl.customer_id, 'INSTALLATION_SCHEDULED',
-         'Your installation has been scheduled for ' || p_date::TEXT || ' (' || p_slot::TEXT || ')'
-    FROM customer_project_links cpl
-   WHERE cpl.project_id = p_project_id
-   LIMIT 1;
+  -- Notify the Consultant (who relays to customer via WhatsApp)
+  -- recipient_id FK references users — customer notifications are
+  -- WhatsApp-based (Option A: magic link), not in-app via this table.
+  -- Part 15 polymorphism concern: not triggered here (Consultant is a users row).
+  IF v_project.consultant_id IS NOT NULL THEN
+    INSERT INTO notifications (recipient_id, type, message)
+    VALUES (v_project.consultant_id, 'INSTALLATION_SCHEDULED',
+            'Installation scheduled for project ' || p_project_id || ' on ' || p_date::TEXT || ' (' || p_slot::TEXT || ')');
+  END IF;
 
   RETURN jsonb_build_object(
     'schedule_id', v_schedule_id,
