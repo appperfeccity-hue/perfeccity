@@ -103,11 +103,11 @@ persistence — not just unit tests exercising pure functions in isolation.
 
 ## Known Remaining Gaps (explicitly documented, not blocking Sprint 6)
 
-1. **RLS enforcement under real JWT**: Function signatures, grants, and policies are
-   structurally correct (V4). Actual row-level filtering (an authenticated SALESPERSON
-   seeing only their own projects) requires a real JWT-authenticated Supabase client,
-   which the MCP `execute_sql` tool (service_role) cannot simulate. This gap is
-   structural to the testing environment, not a code deficiency.
+1. ~~**RLS enforcement under real JWT**~~: **CLOSED (V7).** Tested via `SET LOCAL ROLE authenticated`
+   with `request.jwt.claims` set to simulate real JWT context. Consultant B (non-owner)
+   sees **0 rows** across projects, leads, configuration_line_items, quotation_snapshots.
+   Consultant A (owner) sees only their own data. ADMIN sees everything. Tenant isolation
+   PROVEN across 4 critical tables with 3 different role contexts.
 
 2. **Deno Edge Function runtime**: The `api-quotation`, `api-review`, and
    `api-consultation` Edge Functions have not been DEPLOYED and called via HTTP.
