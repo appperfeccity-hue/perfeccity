@@ -54,6 +54,15 @@ serve(async (req: Request) => {
 
     // Route: POST .../pay
     if (method === 'POST' && url.pathname.includes('/pay')) {
+      // FEATURE GATE: T6/T7 (Razorpay) are written but NOT validated against
+      // the real API. This endpoint is disabled until test-mode verification
+      // confirms the request/response contract is correct.
+      // Remove this guard after Razorpay test-mode pass.
+      const razorpayValidated = Deno.env.get('RAZORPAY_VALIDATED') === 'true';
+      if (!razorpayValidated) {
+        return error('PAYMENT_NOT_READY',
+          'Payment integration is pending validation. Contact your consultant.', 503);
+      }
       return await handlePay(admin, projectId, customerId);
     }
 
