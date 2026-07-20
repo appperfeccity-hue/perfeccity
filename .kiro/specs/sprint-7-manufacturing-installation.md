@@ -138,7 +138,34 @@ E2E fixture (full happy path):
   ORDERED → IN_PRODUCTION → schedule → reschedule → approve reschedule →
   complete → CLOSED
 
-## Done Criteria (from Part 13)
+## Gate Test Results (execution-verified on demfvizmxkuxvluopmtq)
+
+| Step | Result | Detail |
+|---|---|---|
+| gate5_package_not_ready | ✅ PASS | PACKAGE_NOT_READY fires (APPROVED→ORDERED blocked) |
+| t1_mfg_package_ready | ✅ PASS | READY package inserted |
+| t2a_approved_to_ordered | ✅ PASS | APPROVED→ORDERED (with READY package) |
+| t2b_ordered_to_in_production | ✅ PASS | ORDERED→IN_PRODUCTION |
+| t3_schedule_installation | ✅ PASS | Schedule CONFIRMED, schedule_id created |
+| t2c_to_install_scheduled | ✅ PASS | IN_PRODUCTION→INSTALLATION_SCHEDULED |
+| t4_reschedule_request | ✅ PASS | RESCHEDULE_REQUESTED via WF-8 |
+| gate5_already_pending | ✅ PASS | RESCHEDULE_ALREADY_PENDING guard fires |
+| t4_approve_reschedule | ✅ PASS | Manager approves → RESCHEDULED, new_date set |
+| t5_complete_installation | ✅ PASS | **ATOMIC**: project=CLOSED, schedule=COMPLETED |
+| gate6_closed_blocks_reschedule | ✅ PASS | PROJECT_CLOSED guard fires after completion |
+| gate6_illegal_skip_to_closed | ✅ PASS | INVALID_TRANSITION (REVIEWED→CLOSED) |
+
+**12/12 tests pass.** Full APPROVED→ORDERED→IN_PRODUCTION→INSTALLATION_SCHEDULED→CLOSED
+chain proven as a connected flow on live Supabase.
+
+## Bug Caught During Sprint (notifications FK)
+
+`schedule_installation` was initially inserting notifications with `customer_id`
+(from `customer_project_links`) as `recipient_id`. This would FK-fail because
+`notifications.recipient_id` references `users`, not `customer_accounts`
+(Part 15 polymorphism concern). Fixed before shipping: all Sprint 7 notification
+inserts target `consultant_id` or `manager_id` (both `users` rows).
+Customer notifications are WhatsApp-based per Option A (magic link design).
 
 > *Done when:* a project moves APPROVED→ORDERED→IN_PRODUCTION→INSTALLATION_SCHEDULED,
 > a reschedule is requested and approved, a second attempt inside 48 hours correctly

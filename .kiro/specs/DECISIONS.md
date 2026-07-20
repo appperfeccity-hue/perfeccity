@@ -219,6 +219,17 @@ Checked for contradictions or unintended coupling between AD-28 through AD-32 an
 - SI-7/8: Math.round half-up (AD-30) — confirmed by Akshay
 - SI-9: Per-line integer rounding (AD-31) — confirmed by Akshay
 
+**Sprint 7 Cross-AD Interaction Check (end-of-sprint re-read):**
+
+- **AD-27 × Sprint 7 RPCs:** Confirmed. `transition_project_status`, `schedule_installation`, `complete_installation`, `request_reschedule`, `approve_reschedule`, `reject_reschedule` — all in `public` schema with SECURITY DEFINER + SET search_path = public. Consistent with AD-27.
+- **AD-11 × Sprint 7 RPCs:** Confirmed. All 6 new RPCs have `GRANT EXECUTE TO authenticated, service_role` (or `service_role` only for customer-facing `request_reschedule`).
+- **Part 15 notification polymorphism × Sprint 7:** Sprint 7 notifications target only `users` rows (consultant_id, manager_id). Zero notifications target `customer_accounts`. Option A (magic link) means customer notifications are WhatsApp-based, completely outside the `notifications` table. The Part 15 polymorphism concern is not triggered by Sprint 7 — the current `users`-only FK is safe for all Sprint 7 flows.
+- **Part 15 notification column shapes × Sprint 7:** All Sprint 7 notification inserts use `(recipient_id, type, message)` — exactly the columns deployed. No dependency on columns that don't exist.
+- **WF-6 Regenerate Rule × AD-19 (atomicity):** `regenerate` inserts a new row rather than updating the FAILED row. This allows the FAILED row to remain for audit trail, consistent with the "append-only audit log" principle. The partial unique index `one_active_package_per_project` ensures at most one GENERATING/READY at any time.
+- **complete_installation atomicity:** project.status → CLOSED and installation_schedules.status → COMPLETED happen in a single RPC transaction. If either fails, both roll back — no half-closed state possible. Consistent with AD-19's "wrap multi-step writes that can leave worse-than-either state".
+
+No contradictions found. No reversals needed.
+
 No contradictions found. No reversals needed.
 
 ---
