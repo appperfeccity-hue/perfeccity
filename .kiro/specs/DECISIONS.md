@@ -200,6 +200,28 @@ NOT a regression guard (it depends on runtime-generated snapshot_id and timestam
 
 ---
 
+## Sprint 5 Cross-AD Interaction Check (end-of-sprint re-read)
+
+Checked for contradictions or unintended coupling between AD-28 through AD-32 and existing decisions:
+
+- **AD-29 × AD-31:** Directly coupled and intentional. AD-29 says use `unit_cost_paise`; AD-31 says `Math.round(quantity × unit_cost_paise)` per line. Together they produce the frozen `grand_total_paise = 4,910,635`. Changing either requires re-baselining.
+- **AD-30 × AD-31:** Compatible. AD-30 defines WHICH round function (`Math.round`); AD-31 defines WHERE it's applied (per-line at Steps 4/5/8, plus explicitly at Steps 12/13). No conflict — AD-31 extends AD-30's application, doesn't contradict it.
+- **AD-28 × AD-32:** Complementary. AD-28 says "plain SHA-256, independently auditable"; AD-32 says "must re-canonicalize JSONB before hashing." Together they define the complete verification path. AD-32 is the implementation detail that makes AD-28's promise actually hold after a Postgres round-trip.
+- **AD-25 × seal_payload:** No conflict. AD-25 sorts arrays before hashing (Sprint 4's `line_items[]`, `furniture[]` in ConfigHashInput). The quotation seal's `seal_payload` contains NO arrays — only flat objects and nested objects whose keys are sorted by canonicalization. AD-25's discipline doesn't apply to the seal; AD-32's re-canonicalization applies instead.
+- **AD-25 × bom_lines:** `bom_lines` are persisted as individual table rows (not hashed into the seal). Their insertion order doesn't affect the seal. The seal covers `step_breakdown` (aggregated totals), not individual line integrity. This is by design: the seal proves the total; line-level integrity is protected by FK constraints (each bom_line references a specific sealed snapshot_id).
+- **AD-28 × AD-17 (encryption keys):** No conflict. AD-17 applies to low-entropy PII (mobile numbers). AD-28 applies to high-entropy quotation data. Different threat models, different mechanisms (HMAC for PII, plain SHA-256 for audit). If quotation seal ever needs forgery-resistance, AD-28 documents the upgrade path (HMAC with managed key).
+- **AD-27 × Sprint 5 RPCs:** Confirmed. `submit_review_gate`, `persist_quotation_snapshot`, `expire_quotation_snapshot` are all in `public` schema with SECURITY DEFINER + SET search_path. Consistent with AD-27.
+- **AD-11 × Sprint 5 RPCs:** Confirmed. All three new RPCs have `GRANT EXECUTE TO authenticated, service_role`.
+
+**Sprint 5 Spec-Interpretation items resolved:**
+- SI-5: unit_cost_paise (AD-29) — confirmed by Akshay
+- SI-7/8: Math.round half-up (AD-30) — confirmed by Akshay
+- SI-9: Per-line integer rounding (AD-31) — confirmed by Akshay
+
+No contradictions found. No reversals needed.
+
+---
+
 ## Pending (Future Sprints)
 
 _Decisions that are expected to be needed but haven't been made yet._
