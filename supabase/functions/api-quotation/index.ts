@@ -252,21 +252,11 @@ serve(async (req: Request) => {
     }
 
     // -------------------------------------------------------
-    // Step 7: Transition project status REVIEWED → QUOTED
+    // Step 7: Status transition (REVIEWED → QUOTED) is now handled
+    // INSIDE persist_quotation_snapshot RPC (migration 00020).
+    // The RPC atomically transitions status + writes state_history.
+    // No separate transition needed here — prevents audit trail gaps.
     // -------------------------------------------------------
-    await admin
-      .from('projects')
-      .update({ status: 'QUOTED', updated_at: new Date().toISOString() })
-      .eq('project_id', projectId);
-
-    // Record state transition
-    await admin.from('project_state_history').insert({
-      project_id: projectId,
-      from_status: 'REVIEWED',
-      to_status: 'QUOTED',
-      actor_id: rbac.auth.userId,
-      trigger_rule: 'quotation_generated',
-    });
 
     // -------------------------------------------------------
     // Step 8: Return sealed quotation summary
