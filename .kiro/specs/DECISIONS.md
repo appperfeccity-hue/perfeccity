@@ -144,6 +144,62 @@ Recommended next steps (before Sprint 5):
 
 ---
 
+## Sprint 5 Frozen Regression Values (T7 — Gate 1)
+
+### Quotation Engine Output (deterministic, reproducible)
+
+These values MUST be reproduced by any correct implementation of the 13-step engine
+given the 3-space regression fixture (same as Sprint 4's configuration engine fixture).
+
+| Value | Frozen | Test file |
+|---|---|---|
+| `grand_total_paise` | **4,910,635** | `packages/quotation-engine/tests/regression-fixture.test.ts` |
+| `step_4_wall_panel_total_paise` | 1,272,000 | same |
+| `step_5_trim_total_paise` | 528,544 | same |
+| `step_5_consumable_total_paise` | 567,000 | same |
+| `step_5_non_panel_total_paise` | 1,095,544 | same |
+| `step_8_labour_total_paise` | 461,700 | same |
+| `step_9_transport_paise` | 500,000 | same |
+| `step_10_furniture_total_paise` | 0 | same |
+| `step_11_subtotal_paise` | 3,329,244 | same |
+| `step_12_margin_paise` | 832,311 | same |
+| `step_12_pre_gst_total_paise` | 4,161,555 | same |
+| `step_13_gst_paise` | 749,080 | same |
+
+### Seal Function Determinism (guards logic stability)
+
+This hash guards that `computeQuotationSeal`'s canonicalization + hashing logic hasn't
+changed. It is computed from a FIXED fixture input (dummy UUIDs + fixed timestamp).
+It is NOT the "production Gate value" — production seals use real project_id/snapshot_id
+that vary per run. The production-equivalent proof is T5's live round-trip test.
+
+| Value | Frozen | Fixture input |
+|---|---|---|
+| `sha256_hash` (T3 fixture) | **`7a24f5dd2f956f8f78797bb08beaead47e76f8ed49a7e97a599bb3937e06731a`** | project_id='aaaaaaaa-...', snapshot_id='11111111-...', generated_at='2026-07-20T10:30:00.000Z' |
+
+### T5 Live Execution Evidence (documented, not a frozen regression value)
+
+This hash was produced by persisting a real quotation to demfvizmxkuxvluopmtq,
+reading back the JSONB seal_payload (keys reordered by Postgres), re-canonicalizing,
+and independently SHA-256'ing. It proves the full system works end-to-end but is
+NOT a regression guard (it depends on runtime-generated snapshot_id and timestamp).
+
+| Value | Evidence |
+|---|---|
+| `sha256_hash` (T5 live) | `acc500909e853a351d5ef5d624c254d976db97a782b8a21cceda972e0fa0a135` |
+| `snapshot_id` | `409fb621-b6f6-4d1f-9ca6-d56bf3ec9cae` |
+| `project_id` | `d1000000-0000-0000-0000-000000000100` |
+
+### Sprint 4 Frozen Values (unchanged, still enforced)
+
+| Value | Frozen | Notes |
+|---|---|---|
+| Space 1 `configuration_hash` | `f8156a7e77a3f6dd0ec3df6b4bb9be6ed811ec488d2f9c904d5618d11ed7810e` | 145 tests guard this |
+| Space 2 `configuration_hash` | `b47529d208a49638c7191a3d5fef23ff3bf6133a3d716ef0043be5d351bbaa25` | same |
+| Space 3 `configuration_hash` | `3022c37285ec55dc14f4a9c2fce6ac113c6f903fbaf1776e550a07cd177ca202` | same |
+
+---
+
 ## Pending (Future Sprints)
 
 _Decisions that are expected to be needed but haven't been made yet._

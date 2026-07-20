@@ -136,14 +136,24 @@ describe('computeQuotationSeal', () => {
     });
   });
 
-  describe('FROZEN seal hash (regression baseline)', () => {
+  describe('FROZEN seal hash (guards computeQuotationSeal logic stability)', () => {
     it('fixture input produces frozen hash value', async () => {
       const result = await computeQuotationSeal(FIXTURE_SEAL_INPUT);
-      // FROZEN: any change to this value is a REGRESSION.
+      // FROZEN: any change to this value is a REGRESSION in computeQuotationSeal logic.
       // Re-baseline requires documented justification in DECISIONS.md.
+      //
       // This hash depends on: the exact step_breakdown values (AD-31 frozen),
       // the exact timestamp, project_id, snapshot_id, version, and the
       // canonicalization rules (sorted keys, no whitespace, null omitted).
+      //
+      // NOTE: This is NOT the "production Gate value" — production seals use real
+      // project_id/snapshot_id/generated_at that vary per run. This test guards
+      // that the SEAL FUNCTION ITSELF hasn't changed (canonicalization rules,
+      // hashing implementation). The production-equivalent proof is T5's live
+      // round-trip test (persist → read back JSONB → re-canonicalize → rehash → match).
+      //
+      // T5 live-verified hash: acc500909e853a351d5ef5d624c254d976db97a782b8a21cceda972e0fa0a135
+      // (for project_id 'd1000000-...-0100', snapshot '409fb621-...', against demfvizmxkuxvluopmtq)
       expect(result.sha256_hash).toMatchInlineSnapshot(`"7a24f5dd2f956f8f78797bb08beaead47e76f8ed49a7e97a599bb3937e06731a"`);
     });
   });
