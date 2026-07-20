@@ -134,6 +134,17 @@ persistence — not just unit tests exercising pure functions in isolation.
    the same category as "is the Edge Function actually deployed?" — infrastructure
    wiring, not code logic.
 
+   **⚠️ ACTION REQUIRED (Akshay, pre-Sprint-6):** Log into the Supabase dashboard for
+   project `demfvizmxkuxvluopmtq`, navigate to Authentication → Hooks, and confirm:
+   - "Custom Access Token" hook is **enabled**
+   - It points to `public.custom_access_token_hook`
+   If this toggle is off, logins will succeed but tokens won't carry `app_metadata.role`,
+   causing `user_role()` to return NULL and ALL RLS policies to fail closed (deny
+   everything to everyone — safe but non-functional). This is a **silent** failure mode:
+   no error is raised, queries simply return empty results. Unlike a missing Edge Function
+   (which fails loudly with 404), this misconfiguration produces a working auth system
+   that appears to have no data — difficult to diagnose without knowing to check the hook.
+
 2. **Deno Edge Function runtime**: The `api-quotation`, `api-review`, and
    `api-consultation` Edge Functions have not been DEPLOYED and called via HTTP.
    Their logic has been proven via direct RPC calls (the RPCs they orchestrate all
