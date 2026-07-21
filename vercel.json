@@ -1,0 +1,9 @@
+{
+  "buildCommand": "cd apps/consultant && npm install && npm run build",
+  "outputDirectory": "apps/consultant/dist",
+  "framework": "vite",
+  "installCommand": "cd apps/consultant && npm install",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
