@@ -3,10 +3,16 @@
 # PHASE 0.2 — Step 4: HTTP verification sweep
 # ============================================================
 # Hits every deployed Edge Function with a real HTTP request.
-# For JWT-protected functions: expects 401 UNAUTHORIZED (proves the
-# function boots, processes the request, and the RBAC middleware runs).
-# For non-JWT functions: sends a minimal payload and checks for a
-# non-500 structured response.
+# For JWT-protected functions: sends the anon key as both apikey AND
+# Authorization: Bearer. The anon key IS a valid JWT (role=anon), so it
+# clears Supabase's gateway JWT check and reaches the function code.
+# Our RBAC middleware then rejects it (anon has no app_metadata.role) with
+# a structured 401/403 — which proves the function BOOTED and the middleware
+# EXECUTED. Without the Authorization header, the gateway itself returns 401
+# before our code runs, which would be a false positive.
+#
+# For non-JWT functions (verify_jwt=false): the request reaches the function
+# directly. We send a minimal payload and check for a structured response.
 #
 # A function is PASS if it returns ANY structured JSON response
 # (including 401/403/405) — this proves it booted without import errors.
@@ -42,14 +48,17 @@ check_function() {
     response=$(curl -s -w "\n%{http_code}" -m 15 -X POST "$url" \
       -H "Content-Type: application/json" \
       -H "apikey: $ANON_KEY" \
+      -H "Authorization: Bearer $ANON_KEY" \
       -d "$body" 2>&1)
   elif [ "$method" = "GET" ]; then
     response=$(curl -s -w "\n%{http_code}" -m 15 -X GET "$url" \
-      -H "apikey: $ANON_KEY" 2>&1)
+      -H "apikey: $ANON_KEY" \
+      -H "Authorization: Bearer $ANON_KEY" 2>&1)
   else
     response=$(curl -s -w "\n%{http_code}" -m 15 -X "$method" "$url" \
       -H "Content-Type: application/json" \
-      -H "apikey: $ANON_KEY" 2>&1)
+      -H "apikey: $ANON_KEY" \
+      -H "Authorization: Bearer $ANON_KEY" 2>&1)
   fi
   
   http_code=$(echo "$response" | tail -1)
@@ -69,20 +78,20 @@ check_function() {
   fi
 }
 
-echo "--- JWT-protected functions (expect 401 UNAUTHORIZED) ---"
-check_function "api-review" "POST" "api-review" '{}' "401 expected (no JWT)"
-check_function "api-price-preview" "GET" "api-price-preview" "" "401 expected (no JWT)"
-check_function "api-scheduling" "PUT" "api-scheduling" '{}' "401 expected (no JWT)"
-check_function "api-manufacturing" "GET" "api-manufacturing" "" "401 expected (no JWT)"
-check_function "api-leads-assign" "POST" "api-leads-assign" '{}' "401 expected (no JWT)"
-check_function "api-leads-activities" "GET" "api-leads-activities" "" "401 expected (no JWT)"
-check_function "api-leads-transition" "POST" "api-leads-transition" '{}' "401 expected (no JWT)"
-check_function "api-design-dna" "GET" "api-design-dna" "" "401 expected (no JWT)"
-check_function "api-skus" "GET" "api-skus" "" "401 expected (no JWT)"
-check_function "api-users" "GET" "api-users" "" "401 expected (no JWT)"
-check_function "api-leads" "GET" "api-leads" "" "401 expected (no JWT)"
-check_function "api-quotation" "POST" "api-quotation" '{}' "401 expected (no JWT)"
-check_function "api-consultation" "GET" "api-consultation" "" "401 expected (no JWT)"
+echo "--- JWT-protected functions (anon key clears gateway, RBAC middleware rejects → proves boot) ---"
+check_function "api-review" "POST" "api-review" '{}' "401/403 from RBAC middleware"
+check_function "api-price-preview" "GET" "api-price-preview" "" "401/403 from RBAC middleware"
+check_function "api-scheduling" "PUT" "api-scheduling" '{}' "401/403 from RBAC middleware"
+check_function "api-manufacturing" "GET" "api-manufacturing" "" "401/403 from RBAC middleware"
+check_function "api-leads-assign" "POST" "api-leads-assign" '{}' "401/403 from RBAC middleware"
+check_function "api-leads-activities" "GET" "api-leads-activities" "" "401/403 from RBAC middleware"
+check_function "api-leads-transition" "POST" "api-leads-transition" '{}' "401/403 from RBAC middleware"
+check_function "api-design-dna" "GET" "api-design-dna" "" "401/403 from RBAC middleware"
+check_function "api-skus" "GET" "api-skus" "" "401/403 from RBAC middleware"
+check_function "api-users" "GET" "api-users" "" "401/403 from RBAC middleware"
+check_function "api-leads" "GET" "api-leads" "" "401/403 from RBAC middleware"
+check_function "api-quotation" "POST" "api-quotation" '{}' "401/403 from RBAC middleware"
+check_function "api-consultation" "GET" "api-consultation" "" "401/403 from RBAC middleware"
 
 echo ""
 echo "--- Non-JWT functions (expect structured response, not 500) ---"

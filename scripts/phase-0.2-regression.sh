@@ -27,8 +27,10 @@ unset NODE_OPTIONS
 # Run config engine tests
 echo ""
 echo "--- Config Engine Tests ---"
+set +e
 CONFIG_OUTPUT=$(cd packages/config-engine && npx vitest --run 2>&1)
 CONFIG_RESULT=$?
+set -e
 CONFIG_TESTS=$(echo "$CONFIG_OUTPUT" | grep "Tests" | tail -1)
 echo "$CONFIG_TESTS"
 
@@ -42,8 +44,10 @@ echo "✅ Config engine: PASS"
 # Run quotation engine tests
 echo ""
 echo "--- Quotation Engine Tests ---"
+set +e
 QUOT_OUTPUT=$(cd packages/quotation-engine && npx vitest --run 2>&1)
 QUOT_RESULT=$?
+set -e
 QUOT_TESTS=$(echo "$QUOT_OUTPUT" | grep "Tests" | tail -1)
 echo "$QUOT_TESTS"
 
