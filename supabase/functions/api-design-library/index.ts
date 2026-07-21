@@ -116,6 +116,13 @@ serve(async (req: Request) => {
         const body = await req.json();
         return await handleReplaceElements(admin, templateId, rbac.auth, body);
       }
+      if (url.pathname.includes('/glb')) {
+        if (!['ADMIN', 'DESIGNER'].includes(rbac.auth.role)) {
+          return error('FORBIDDEN', 'Only ADMIN or DESIGNER can register GLB assets', 403);
+        }
+        const body = await req.json();
+        return await handleRegisterGlb(admin, templateId, rbac.auth, body);
+      }
       if (url.pathname.includes('/consumables')) {
         if (!['ADMIN', 'DESIGNER'].includes(rbac.auth.role)) {
           return error('FORBIDDEN', 'Only ADMIN or DESIGNER can edit consumables', 403);
@@ -394,6 +401,73 @@ async function handleReplaceConsumables(
   }
 
   return success({ template_id: templateId, consumables: inserted, count: inserted?.length || 0 });
+}
+
+// ============================================================
+// GLB Asset Registration
+// ============================================================
+
+/**
+ * POST /api/v1/design-library/:id/glb
+ * Registers a GLB asset for the template. The client uploads the file directly
+ * to Supabase Storage, then calls this endpoint with the s3_key to register metadata.
+ * Also supports registering RENDER thumbnails via asset_type parameter.
+ */
+async function handleRegisterGlb(
+  admin: any, templateId: string, auth: { userId: string; role: string }, body: any
+): Promise<Response> {
+  // Check template exists and is DRAFT
+  const { data: template } = await admin
+    .from('design_templates')
+    .select('template_id, status, created_by')
+    .eq('template_id', templateId)
+    .single();
+
+  if (!template) return error('TEMPLATE_NOT_FOUND', 'Template not found', 404);
+  if (template.status !== 'DRAFT') {
+    return error('TEMPLATE_NOT_EDITABLE', 'Only DRAFT templates can have assets uploaded', 422);
+  }
+  if (auth.role === 'DESIGNER' && template.created_by !== auth.userId) {
+    return error('FORBIDDEN', 'Designers can only upload to their own templates', 403);
+  }
+
+  if (!body.s3_key) {
+    return error('VALIDATION_ERROR', 's3_key is required (path in Storage)', 422, 's3_key');
+  }
+
+  const assetType = body.asset_type || 'GLB';
+  if (!['GLB', 'RENDER'].includes(assetType)) {
+    return error('VALIDATION_ERROR', 'asset_type must be GLB or RENDER', 422, 'asset_type');
+  }
+
+  // Deactivate previous assets of same type (only one active GLB/RENDER at a time)
+  await admin
+    .from('digital_assets')
+    .update({ is_active: false })
+    .eq('template_id', templateId)
+    .eq('asset_type', assetType);
+
+  // Insert new asset
+  const { data: asset, error: insertErr } = await admin
+    .from('digital_assets')
+    .insert({
+      template_id: templateId,
+      asset_type: assetType,
+      s3_key: body.s3_key,
+      is_active: true,
+      uploaded_by: auth.userId,
+    })
+    .select()
+    .single();
+
+  if (insertErr) {
+    return error('DB_ERROR', 'Failed to register asset: ' + insertErr.message, 500);
+  }
+
+  return success({
+    asset,
+    message: `${assetType} asset registered successfully`,
+  }, 201);
 }
 
 // ============================================================

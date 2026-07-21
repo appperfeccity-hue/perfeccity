@@ -66,13 +66,10 @@ export async function handleSubmitReview(
   }
 
   // Notification to ADMIN (best-effort — failure doesn't corrupt state)
-  await admin.from('notifications').insert({
-    recipient_role: 'ADMIN',
-    notification_type: 'TEMPLATE_SUBMITTED_FOR_REVIEW',
-    title: `Template submitted for review: ${template.template_name}`,
-    body: `Template "${template.template_name}" has been submitted for review by ${auth.role}.`,
-    metadata: { template_id: templateId, submitted_by: auth.userId },
-  }).then(() => {}).catch(() => {});
+  // Note: recipient_id requires a specific user UUID. For "notify all admins"
+  // we'd need to query for admin users first. For now, skip notification
+  // (the template appears in the review queue regardless).
+  // TODO: Query admin user IDs and insert one notification per admin.
 
   return success({
     template_id: templateId,

@@ -104,10 +104,8 @@ export async function handleRequestChanges(
   if (template.created_by) {
     await admin.from('notifications').insert({
       recipient_id: template.created_by,
-      notification_type: 'TEMPLATE_CHANGES_REQUESTED',
-      title: `Changes requested: ${template.template_name}`,
-      body: `Admin requested changes on "${template.template_name}": ${body.comment}`,
-      metadata: { template_id: templateId, comment: body.comment, requested_by: auth.userId },
+      type: 'TEMPLATE_CHANGES_REQUESTED',
+      message: `Changes requested on "${template.template_name}": ${body.comment}`,
     }).then(() => {}).catch(() => {});
   }
 
