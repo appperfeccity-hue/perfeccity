@@ -29,6 +29,7 @@ import { handleStage7 } from './stage-7.ts';
 import { handleProgress } from './progress.ts';
 import { handleRunRecommendation, handleGetRecommendation } from './recommendation.ts';
 import { handleListFurniture, handleAddFurniture, handleRemoveFurniture } from './furniture.ts';
+import { handleListPhotos, handleUploadPhoto, handleDeletePhoto } from './photos.ts';
 
 serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -44,6 +45,24 @@ serve(async (req: Request) => {
 
     if (!projectId) {
       return error('BAD_REQUEST', 'Project ID required in path', 400);
+    }
+
+    // Route: GET .../photos (list site photos for project)
+    if (method === 'GET' && url.pathname.includes('/photos')) {
+      return await handleListPhotos(admin, projectId, rbac.auth);
+    }
+
+    // Route: POST .../photos (register a site photo)
+    if (method === 'POST' && url.pathname.includes('/photos') && !url.pathname.includes('/photos/')) {
+      const body = await req.json();
+      return await handleUploadPhoto(admin, projectId, rbac.auth, body);
+    }
+
+    // Route: DELETE .../photos/:photo_id (soft-delete)
+    if (method === 'DELETE' && url.pathname.includes('/photos/')) {
+      const photoId = extractPhotoId(url.pathname);
+      if (!photoId) return error('BAD_REQUEST', 'Photo ID required in path', 400);
+      return await handleDeletePhoto(admin, projectId, photoId, rbac.auth);
     }
 
     // Route: GET .../progress
@@ -168,6 +187,13 @@ function extractStageNumber(pathname: string): number | null {
 function extractFurnitureId(pathname: string): string | null {
   const match = pathname.match(
     /furniture\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  );
+  return match ? match[1] : null;
+}
+
+function extractPhotoId(pathname: string): string | null {
+  const match = pathname.match(
+    /photos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
   );
   return match ? match[1] : null;
 }

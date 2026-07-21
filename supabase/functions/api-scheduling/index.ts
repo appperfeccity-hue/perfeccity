@@ -1,30 +1,26 @@
 /**
  * Edge Function: api-scheduling
- * Sprint 6 T8 — Manager Scheduling (delivery + installation dates)
+ * Sprint 6 T8 — Manager Scheduling + Completion
  *
  * Endpoints:
- * - PUT /api/v1/projects/:id/schedule/delivery
- * - PUT /api/v1/projects/:id/schedule/installation
+ * - PUT  /api/v1/projects/:id/schedule/delivery      (set delivery date)
+ * - PUT  /api/v1/projects/:id/schedule/installation  (set installation date)
+ * - POST /api/v1/projects/:id/delivery/confirm       (mark delivery done)
+ * - POST /api/v1/projects/:id/installation/complete  (close project)
  *
  * Role: ADMIN or MANAGER
- * Prerequisite: project.status = APPROVED (payment confirmed)
- *
- * These are the Manager's first responsibilities in the workflow —
- * nothing before APPROVED requires Manager action (locked MVP decision).
+ * Prerequisite: project.status = APPROVED (for scheduling)
  */
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { requireAuth } from '../_shared/middleware/rbac.ts';
 import { getAdminClient } from '../_shared/supabase.ts';
 import { success, error } from '../_shared/response.ts';
+import { handleDeliveryConfirm, handleInstallationComplete } from './complete.ts';
 
 serve(async (req: Request) => {
   const url = new URL(req.url);
   const method = req.method;
-
-  if (method !== 'PUT') {
-    return error('METHOD_NOT_ALLOWED', 'Only PUT is allowed for scheduling', 405);
-  }
 
   // RBAC: ADMIN or MANAGER only
   const rbac = await requireAuth(req, ['ADMIN', 'MANAGER']);
@@ -36,6 +32,22 @@ serve(async (req: Request) => {
 
     if (!projectId) {
       return error('BAD_REQUEST', 'Project ID required in path', 400);
+    }
+
+    // POST routes (completion actions)
+    if (method === 'POST') {
+      if (url.pathname.includes('/delivery/confirm')) {
+        return await handleDeliveryConfirm(admin, projectId, rbac.auth);
+      }
+      if (url.pathname.includes('/installation/complete')) {
+        return await handleInstallationComplete(admin, projectId, rbac.auth);
+      }
+      return error('BAD_REQUEST', 'Unknown POST route', 400);
+    }
+
+    // PUT routes (scheduling)
+    if (method !== 'PUT') {
+      return error('METHOD_NOT_ALLOWED', 'Use PUT for scheduling, POST for completion', 405);
     }
 
     // Validate project exists and is APPROVED
