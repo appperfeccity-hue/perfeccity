@@ -34,3 +34,6 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+packages/recommendation-engine/node_modules
+apps/consultant/node_modules
+apps/consultant/dist

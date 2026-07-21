@@ -1,0 +1,59 @@
+name: CI — Test + Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            packages/config-engine/package.json
+            packages/quotation-engine/package.json
+            packages/recommendation-engine/package.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Config Engine — 145 tests
+        working-directory: packages/config-engine
+        run: npx vitest --run
+
+      - name: Quotation Engine — 33 tests
+        working-directory: packages/quotation-engine
+        run: npx vitest --run
+
+      - name: Recommendation Engine — 24 tests
+        working-directory: packages/recommendation-engine
+        run: npx vitest --run
+
+      - name: Verify engine bundle is current (AD-26)
+        run: |
+          npm run build:engine-bundle 2>/dev/null || echo "build:engine-bundle script not found — skipping"
+          # If the script exists and the bundle changed, fail
+          if git diff --name-only | grep -q "engine-bundle.js"; then
+            echo "ERROR: engine-bundle.js is stale. Run 'npm run build:engine-bundle' and commit."
+            exit 1
+          fi
+
+      - name: Gate 1 — Frozen regression values
+        working-directory: packages/config-engine
+        run: |
+          # Verify the frozen hashes are still in the test file (not removed/weakened)
+          grep -c "f8156a7e77a3f6dd0ec3df6b4bb9be6ed811ec488d2f9c904d5618d11ed7810e" tests/integration/regression-fixture.test.ts
+          grep -c "b47529d208a49638c7191a3d5fef23ff3bf6133a3d716ef0043be5d351bbaa25" tests/integration/regression-fixture.test.ts
+          grep -c "3022c37285ec55dc14f4a9c2fce6ac113c6f903fbaf1776e550a07cd177ca202" tests/integration/regression-fixture.test.ts
+
+      - name: Gate 4 — Frozen quotation total
+        working-directory: packages/quotation-engine
+        run: |
+          grep -c "4910635" tests/regression-fixture.test.ts

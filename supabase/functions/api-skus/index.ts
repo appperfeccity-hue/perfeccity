@@ -53,6 +53,16 @@ serve(async (req: Request) => {
       return await handleDeactivate(req, pathname);
     }
 
+    // Route: GET /skus/export (Admin — CSV download)
+    if (method === 'GET' && pathname.endsWith('/export')) {
+      return await handleExport(req);
+    }
+
+    // Route: POST /skus/import (Admin — CSV upload)
+    if (method === 'POST' && pathname.includes('/import')) {
+      return await handleImport(req, url);
+    }
+
     // Route: POST /skus (Admin direct create)
     if (method === 'POST') {
       return await handleCreate(req);
@@ -364,4 +374,144 @@ function extractSku(pathname: string): string | null {
   // SKU codes are alphanumeric with dashes (e.g., WLP-WPC-CLS-OAK-001)
   const match = pathname.match(/skus\/([A-Z0-9\-]+)/i);
   return match ? match[1] : null;
+}
+
+
+// ============================================================
+// GET /skus/export — CSV Download (Admin only)
+// ============================================================
+
+async function handleExport(req: Request): Promise<Response> {
+  const rbac = await requireAuth(req, ['ADMIN']);
+  if (!rbac.ok) return rbac.response;
+
+  const admin = getAdminClient();
+  const { data: skus, error: queryErr } = await admin
+    .from('product_library')
+    .select('sku, name, category, furniture_category, material_family, unit, width_mm, height_mm, thickness_mm, unit_cost_paise, sell_price_paise, status, is_active, proposed_by')
+    .order('sku', { ascending: true });
+
+  if (queryErr) return error('DB_ERROR', 'Failed to export SKUs', 500);
+
+  // Build CSV
+  const headers = ['sku', 'name', 'category', 'furniture_category', 'material_family', 'unit', 'width_mm', 'height_mm', 'thickness_mm', 'unit_cost_paise', 'sell_price_paise', 'status', 'is_active'];
+  const rows = (skus || []).map(s => headers.map(h => {
+    const val = (s as Record<string, unknown>)[h];
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    return str.includes(',') ? `"${str}"` : str;
+  }).join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': 'attachment; filename="skus-export.csv"',
+    },
+  });
+}
+
+// ============================================================
+// POST /skus/import?dry_run=true|false — CSV Upload (Admin only)
+// ============================================================
+
+async function handleImport(req: Request, url: URL): Promise<Response> {
+  const rbac = await requireAuth(req, ['ADMIN']);
+  if (!rbac.ok) return rbac.response;
+
+  const dryRun = url.searchParams.get('dry_run') !== 'false'; // default: dry_run=true
+
+  const body = await req.text();
+  if (!body.trim()) return error('VALIDATION_ERROR', 'CSV body is empty', 422);
+
+  const lines = body.trim().split('\n');
+  if (lines.length < 2) return error('VALIDATION_ERROR', 'CSV must have header + at least one data row', 422);
+
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const requiredHeaders = ['sku', 'name', 'category', 'unit'];
+  const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+  if (missingHeaders.length > 0) {
+    return error('VALIDATION_ERROR', `Missing required CSV headers: ${missingHeaders.join(', ')}`, 422);
+  }
+
+  const results: { row: number; sku: string; action: string; error?: string }[] = [];
+  const admin = getAdminClient();
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCsvLine(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = values[idx] || ''; });
+
+    if (!row.sku || !row.name || !row.category) {
+      results.push({ row: i + 1, sku: row.sku || '?', action: 'SKIP', error: 'Missing required field (sku/name/category)' });
+      continue;
+    }
+
+    if (!VALID_CATEGORIES.includes(row.category)) {
+      results.push({ row: i + 1, sku: row.sku, action: 'SKIP', error: `Invalid category: ${row.category}` });
+      continue;
+    }
+
+    // Check if SKU exists
+    const { data: existing } = await admin
+      .from('product_library')
+      .select('sku')
+      .eq('sku', row.sku)
+      .single();
+
+    const payload: Record<string, unknown> = {
+      sku: row.sku,
+      name: row.name,
+      category: row.category,
+      unit: row.unit || 'pc',
+      status: 'ACTIVE',
+      is_active: true,
+    };
+    if (row.furniture_category) payload.furniture_category = row.furniture_category;
+    if (row.material_family) payload.material_family = row.material_family;
+    if (row.width_mm) payload.width_mm = parseInt(row.width_mm);
+    if (row.height_mm) payload.height_mm = parseInt(row.height_mm);
+    if (row.thickness_mm) payload.thickness_mm = parseInt(row.thickness_mm);
+    if (row.unit_cost_paise) payload.unit_cost_paise = parseInt(row.unit_cost_paise);
+    if (row.sell_price_paise) payload.sell_price_paise = parseInt(row.sell_price_paise);
+
+    if (existing) {
+      if (!dryRun) {
+        const { sku: _s, ...updatePayload } = payload;
+        await admin.from('product_library').update(updatePayload).eq('sku', row.sku);
+      }
+      results.push({ row: i + 1, sku: row.sku, action: 'UPDATE' });
+    } else {
+      if (!dryRun) {
+        await admin.from('product_library').insert(payload);
+      }
+      results.push({ row: i + 1, sku: row.sku, action: 'INSERT' });
+    }
+  }
+
+  return success({
+    dry_run: dryRun,
+    total_rows: lines.length - 1,
+    processed: results.length,
+    inserts: results.filter(r => r.action === 'INSERT').length,
+    updates: results.filter(r => r.action === 'UPDATE').length,
+    skipped: results.filter(r => r.action === 'SKIP').length,
+    details: results,
+    message: dryRun ? 'Dry run complete — no changes applied. Set dry_run=false to apply.' : 'Import complete.',
+  });
+}
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (const ch of line) {
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (ch === ',' && !inQuotes) { result.push(current.trim()); current = ''; continue; }
+    current += ch;
+  }
+  result.push(current.trim());
+  return result;
 }

@@ -1,0 +1,12 @@
+{
+  "name": "@perfeccity/recommendation-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recommendation Engine — HC-1 to HC-6 filter + weighted scoring (Part 8, Sprint 4 R1)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest --run"
+  }
+}

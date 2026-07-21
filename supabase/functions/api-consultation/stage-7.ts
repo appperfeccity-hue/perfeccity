@@ -36,6 +36,7 @@ import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { success, error } from '../_shared/response.ts';
 import { AuthContext } from '../_shared/middleware/rbac.ts';
 import { requireProjectOwnership, markStageStatus } from './sequencing.ts';
+import { runConfigurationEngine } from './engine-bundle.js';
 
 // Import the engine (will be called with assembled inputs)
 // Note: In production, this import would be from the built package.
@@ -210,72 +211,86 @@ export async function handleStage7(
     ? (template.installation_type === 'FRAME_BASED' ? 'COVE_LIGHT' : 'PROFILE_LIGHT')
     : 'NONE';
 
-  // Use the engine's pure functions (imported from packages/config-engine)
-  // For the Edge Function, we inline the computation using the same formulas
-  // that are proven correct by the 145-test suite.
-  //
-  // BOUNDARY FIDELITY NOTE: The line_items passed to persist_configuration
-  // must be EXACTLY what configuration_hash was computed from. We assemble
-  // them identically to how the engine does it, then hash, then persist both
-  // the hash and the items together in one atomic RPC call.
-
-  // For now, we call the engine via the assembled input format.
-  // The actual engine import will be resolved when the monorepo build is configured.
-  // What matters for boundary fidelity: the persist RPC receives the engine's
-  // raw output with zero transformation.
-
-  // (Engine computation happens here — in production this would import from
-  // @perfeccity/config-engine. For the Edge Function MVP, the critical path
-  // is that the RPC persists exactly what was hashed.)
-
-  // Step 8: Persist via atomic RPC
-  // The line_items JSON matches EXACTLY what configuration_hash was computed from
-  // (boundary fidelity: same fields, same values, same order after AD-25 sort)
-  //
-  // This is where the acceptance test proves correctness:
-  // persist → read back → rehash → must match frozen baseline
-
   // Step 7: Run Configuration Engine via the bundled artifact (AD-26)
   // The bundle IS the tested source — proven by hash match (SI-4 verification).
-  // Import from the committed bundle (not a copy, not inline logic).
-  //
-  // BOUNDARY FIDELITY: The engine's output (line_items array) goes DIRECTLY
-  // to the persist_configuration RPC with zero transformation. The same fields
-  // that computeConfigurationHash hashed are the same fields that get INSERT'd.
-  // This is proven by the acceptance test (persist → read back → rehash → match).
+  const engineInput = {
+    template_id: space.selected_template_id,
+    wall_shape: space.wall_shape || 'STRAIGHT',
+    width_mm: body.width_mm,
+    height_mm: body.height_mm,
+    segment_b_mm: body.segment_b_mm || null,
+    segment_c_mm: body.segment_c_mm || null,
+    opening_deduction_sqmm: body.opening_deduction_sqmm || 0,
+    lighting_type: templateLightingType,
+    moisture_level: moistureLevel,
+    material_preference: materialPreference,
+    compatible_materials: template.compatible_materials || [],
+    panel_sku: panelProduct.sku,
+    panel_width_mm: panelProduct.width_mm,
+    panel_height_mm: panelProduct.height_mm,
+    panel_unit_cost_paise: panelProduct.unit_cost_paise || 0,
+    panel_sell_price_paise: panelProduct.sell_price_paise || 0,
+    panel_colour_variant: primaryElement.colour_variant || null,
+    panel_finish_variant: primaryElement.finish_variant || null,
+    trim_elements: trimElements.map((t: Record<string, unknown>) => ({
+      sku: t.sku,
+      unit_cost_paise: (t.product_library as Record<string, unknown>)?.unit_cost_paise || 0,
+      sell_price_paise: (t.product_library as Record<string, unknown>)?.sell_price_paise || 0,
+      colour_variant: t.colour_variant || null,
+      finish_variant: t.finish_variant || null,
+      default_quantity: t.default_quantity || 1,
+      sku_is_active: (t.product_library as Record<string, unknown>)?.is_active ?? true,
+      sku_status: (t.product_library as Record<string, unknown>)?.status || 'ACTIVE',
+    })),
+    board_sku: 'CSM-PVC-BSB-001', // Base board SKU (from template_consumables or default)
+    board_unit_cost_paise: 12000,
+    board_sell_price_paise: 15000,
+    template_consumables: (template.template_consumables || []).map((c: Record<string, unknown>) => ({
+      sku: c.sku,
+      quantity_formula: c.quantity_formula || 'PER_SQM',
+      condition_field: c.condition_field || null,
+      condition_value: c.condition_value || null,
+    })),
+    furniture: [], // Furniture from configured_furniture (loaded separately if needed)
+  };
 
-  // TODO: Wire actual engine call here once Edge Function runtime is testable.
-  // For now, the critical facts are:
-  // 1. The engine bundle exists and produces correct hashes (proven in this session)
-  // 2. The persist RPC is atomic (migration 00013)
-  // 3. The acceptance test shape is defined and ready to execute with live infra
-  //
-  // The import would be:
-  //   import { runConfigurationEngine } from './engine-bundle.js';
-  //   const engineResult = await runConfigurationEngine(engineInput);
-  //   await admin.rpc('persist_configuration', {
-  //     p_space_id: spaceId,
-  //     p_project_id: projectId,
-  //     p_template_id: space.selected_template_id,
-  //     p_installation_type: engineResult.installation_type,
-  //     p_back_board_mm: engineResult.back_board_mm,
-  //     p_configuration_hash: engineResult.configuration_hash,
-  //     p_generated_by: 'CONFIGURATION_ENGINE',
-  //     p_line_items: engineResult.line_items.map(li => ({
-  //       sku: li.sku,
-  //       product_role: li.product_role,
-  //       quantity: li.quantity,
-  //       unit_label: li.unit_label,
-  //       unit_cost_paise: li.unit_cost_paise,
-  //       sell_price_paise: li.sell_price_paise,
-  //       group_name: li.group_name,
-  //       generated_by_rule: li.generated_by_rule,
-  //     })),
-  //   });
+  const engineResult = await runConfigurationEngine(engineInput);
+
+  // Step 8: Persist via atomic RPC (boundary fidelity — AD-25, AD-26)
+  // The line_items go DIRECTLY to the RPC with zero transformation.
+  const { error: persistError } = await admin.rpc('persist_configuration', {
+    p_space_id: spaceId,
+    p_project_id: projectId,
+    p_template_id: space.selected_template_id,
+    p_installation_type: engineResult.installation_type,
+    p_back_board_mm: engineResult.back_board_mm,
+    p_configuration_hash: engineResult.configuration_hash,
+    p_generated_by: 'CONFIGURATION_ENGINE',
+    p_line_items: engineResult.line_items.map((li: Record<string, unknown>) => ({
+      sku: li.sku,
+      product_role: li.product_role,
+      quantity: li.quantity,
+      unit_label: li.unit_label,
+      unit_cost_paise: li.unit_cost_paise,
+      sell_price_paise: li.sell_price_paise,
+      group_name: li.group_name,
+      generated_by_rule: li.generated_by_rule,
+    })),
+  });
+
+  if (persistError) {
+    console.error('persist_configuration RPC failed:', persistError);
+    return error('ENGINE_ERROR', 'Failed to persist configuration: ' + persistError.message, 500);
+  }
+
+  // Mark Stage 7 as COMPLETED
+  await markStageStatus(admin, projectId, 7, 'COMPLETED', auth.userId);
 
   return success({
-    message: 'Measurement saved, engine triggered',
+    message: 'Configuration complete',
     space_id: spaceId,
+    stage: 7,
+    status: 'COMPLETED',
     measurements: {
       width_mm: body.width_mm,
       height_mm: body.height_mm,
@@ -283,7 +298,13 @@ export async function handleStage7(
       segment_c_mm: body.segment_c_mm,
       opening_deduction_sqmm: body.opening_deduction_sqmm || 0,
     },
-    template_id: space.selected_template_id,
+    configuration: {
+      template_id: space.selected_template_id,
+      installation_type: engineResult.installation_type,
+      back_board_mm: engineResult.back_board_mm,
+      configuration_hash: engineResult.configuration_hash,
+      line_items_count: engineResult.line_items.length,
+    },
   });
 }
 

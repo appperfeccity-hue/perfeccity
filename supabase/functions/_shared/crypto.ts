@@ -164,3 +164,101 @@ function hexToBytes(hex: string): Uint8Array {
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+
+// ============================================================
+// Email Encryption — DPDP Compliance (Part 15, Item 1)
+// Same pattern as mobile: AES-256-GCM + HMAC-SHA256
+// SEPARATE KEYS from mobile (EMAIL_ENCRYPTION_KEY, EMAIL_HASH_KEY)
+// ============================================================
+
+/**
+ * Get the email encryption key from environment.
+ * Key must be a 64-char hex string (32 bytes / 256 bits).
+ */
+function getEmailEncryptionKey(): Uint8Array {
+  const keyHex = Deno.env.get('EMAIL_ENCRYPTION_KEY');
+  if (!keyHex || keyHex.length !== 64) {
+    throw new Error(
+      'EMAIL_ENCRYPTION_KEY must be set as a 64-character hex string (256 bits). ' +
+      'Generate with: openssl rand -hex 32'
+    );
+  }
+  return hexToBytes(keyHex);
+}
+
+/**
+ * Encrypt an email address. Returns bytes: IV (12) || ciphertext || tag (16).
+ * 
+ * Why encrypt email (DPDP):
+ * - Indian DPDP Act classifies email as personal data
+ * - Plaintext storage in the DB is a compliance risk
+ * - Encrypted at rest means DB breach doesn't expose emails
+ * - Only Edge Functions (with the key) can decrypt for display/sending
+ */
+export async function encryptEmail(plaintext: string): Promise<Uint8Array> {
+  const keyBytes = getEmailEncryptionKey();
+  const key = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'AES-GCM' }, false, ['encrypt']
+  );
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext.toLowerCase().trim());
+
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv }, key, encoded
+  );
+
+  const result = new Uint8Array(iv.length + ciphertext.byteLength);
+  result.set(iv, 0);
+  result.set(new Uint8Array(ciphertext), iv.length);
+  return result;
+}
+
+/**
+ * Decrypt an email address from stored bytes (IV || ciphertext || tag).
+ */
+export async function decryptEmail(encrypted: Uint8Array): Promise<string> {
+  const keyBytes = getEmailEncryptionKey();
+  const key = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
+  );
+
+  const iv = encrypted.slice(0, 12);
+  const ciphertext = encrypted.slice(12);
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv }, key, ciphertext
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+/**
+ * Compute HMAC-SHA256 of an email (for dedup/search via email_hash).
+ * 
+ * Email is normalized before hashing: lowercase + trim.
+ * This ensures "User@Example.COM" and "user@example.com" produce the same hash.
+ * 
+ * Key: EMAIL_HASH_KEY environment variable (separate from encryption key).
+ */
+export async function hashEmail(email: string): Promise<string> {
+  const hashKeyHex = Deno.env.get('EMAIL_HASH_KEY');
+  if (!hashKeyHex || hashKeyHex.length !== 64) {
+    throw new Error(
+      'EMAIL_HASH_KEY must be set as a 64-character hex string (256 bits). ' +
+      'Generate with: openssl rand -hex 32'
+    );
+  }
+
+  const keyBytes = hexToBytes(hashKeyHex);
+  const key = await crypto.subtle.importKey(
+    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+
+  // Normalize: lowercase + trim (case-insensitive dedup)
+  const normalized = email.toLowerCase().trim();
+  const data = new TextEncoder().encode(normalized);
+  const signature = await crypto.subtle.sign('HMAC', key, data);
+  return bytesToHex(new Uint8Array(signature));
+}

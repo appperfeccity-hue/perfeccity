@@ -58,6 +58,19 @@ This file is append-only within a sprint. Reversing a decision requires a new en
 
 ---
 
+## Sprint 5 Decisions
+
+| ID | Decision | Rationale | Trade-off | Frozen? |
+|---|---|---|---|---|
+| AD-28 | Quotation seal uses plain SHA-256, independently auditable (not HMAC) | Primary purpose is auditability and reproducibility. `sha256_hash = SHA256(canonical_json(seal_payload))` must be independently recomputable from stored data alone, without the live engine or any secret material. | Does NOT prevent forgery by someone with DB write access (they could edit both seal_payload and sha256_hash consistently). Tamper-evidence against privileged insiders would require HMAC or digital signatures — deliberately Layer 2. | Yes |
+| AD-29 | Quotation engine Steps 4-5 use `unit_cost_paise` (not `sell_price_paise`) — SI-5 CONFIRMED | **What triggered the question:** `product_library` stores both columns with real, independently-set values (`WLP-WPC-CLS-OAK-001`: cost=32000, sell=42000 → 31.25% markup, NOT 25%). If sell prices were derived from cost+25%, they'd be uniform — they're not. Part 8 Step 4 literally says `×unit_cost`. **Confirmed by Akshay:** Steps 4-5 use `unit_cost_paise`. Step 12's `ROUND(subtotal×0.25)` is the margin that transforms cost into customer-facing price. `sell_price_paise` is NOT consumed by the formal quotation engine — it's available for Admin reference and potentially the price-preview approximation (T10, separate question). **Consequence for the regression fixture (Space 1, 18 panels):** `18 × 32000 = 576,000` (not `18 × 42000 = 756,000`). A 31% difference in the quoted panel line. | `sell_price_paise` column exists but is confirmed as NOT authoritative for the sealed quotation. Its purpose is reference/preview, not formal pricing. A future T10 implementation may use it for quick display. | Yes |
+| AD-30 | Rounding is `Math.round()` (standard half-up, nearest paise) — SI-7/8 CONFIRMED | **What triggered the question:** Steps 12-13 both say `ROUND(...)` without specifying precision or direction. Indian GST calculations sometimes have mandated rounding rules. Banker's rounding is common in financial systems. **Confirmed by Akshay:** Standard `Math.round()` (half-up), to nearest paise, no special GST-compliance rule for MVP. Rounding happens at each `ROUND()` step as literally written in Part 8 (Step 12 rounds the margin result, Step 13 rounds the GST result). | Not GST-compliant if regulations require a specific rounding convention. Acceptable for MVP. If compliance requirements surface later, this is a one-line change (swap `Math.round` for the mandated function) + re-baseline regression values. | Yes |
+| AD-31 | Per-line-item cost rounded to integer paise before summing — SI-9 CONFIRMED | **What triggered the question:** Trim quantity is fractional (41.338... rft × 4800 = 198,425.19... paise). Without per-line rounding, `subtotal_paise` was 3,329,243.307 — a fractional paise value stored in a BIGINT column. **Platform rule (Part 1, non-negotiable):** "Money in paise (BIGINT) — never floating point." This means every money intermediate must be integer. **SI-9 surfaced to Akshay:** Does "Money in paise = integer" mean round each line-item cost immediately, or carry precision to Steps 12/13? **Akshay's answer (verbatim):** "Round each line item to integer paise immediately, at the point it's computed (Steps 4, 5, 8), not carried as fractional precision to Steps 12/13." **Resolution:** `Math.round(quantity × unit_cost_paise)` applied per line item at Steps 4, 5, and 8. All intermediates are integer by construction. Steps 12/13 still round explicitly (margin, GST), but pre_gst and grand_total are naturally integer (sum of integers) — no extra round needed. **Impact:** grand_total changed from 4,910,634 (float-carry) to 4,910,635 (per-line integer). Implementation was already correct at `c0cf145` before confirmation arrived — confirmation validates the existing code, no further change required. | Per-line rounding accumulates differently than end-rounding (can differ by up to N×0.5 paise where N = number of fractional-qty line items). This is the standard accounting approach (round each line on the invoice). | Yes |
+| AD-32 | Seal verification MUST re-canonicalize JSONB before hashing — never hash raw JSONB text | **What triggered the finding:** T5 acceptance test revealed that `seal_payload` stored as JSONB has its keys reordered by Postgres (JSONB does not preserve insertion order — it uses its own internal sort). Reading back `seal_payload` and casting directly to text would produce a different string than what was originally hashed, breaking verification. **Resolution:** The documented verification path is: read JSONB → parse to object → re-canonicalize (sorted keys, no whitespace, null omitted) → SHA-256 → compare to `sha256_hash`. This works because canonicalization is idempotent — applying the same rules to the same data always produces the same output regardless of input key order. **DO NOT "optimize" this by hashing `seal_payload::text` directly from Postgres.** That text representation is Postgres's internal format (which may include spaces, has its own key ordering), not the canonical form. The re-canonicalization step is what makes JSONB storage safe. **Evidence:** T5 test showed Postgres returned keys like `{"version":..., "project_id":..., "snapshot_id":...}` while the original canonical form started `{"generated_at":..., "grand_total_paise":...}`. Same data, different string. Only re-canonicalization makes them hash-equivalent. | Adds one canonicalization pass on every verification. Negligible cost (< 1ms for typical payloads). The alternative — storing as TEXT to preserve exact bytes — would sacrifice JSONB's indexing and querying capabilities for no meaningful performance gain. | Yes |
+| AD-33 | T10 price-preview uses `sell_price_paise` directly (not the formal engine) — CONFIRMED | **What triggered the question:** `product_library` stores both `unit_cost_paise` and `sell_price_paise`. AD-29 confirmed the formal quotation engine uses `unit_cost_paise`. Question: what does the Consultant-facing price preview use? **Confirmed by Akshay:** `sell_price_paise` directly. Implementation: `Σ(configuration_line_items.sell_price_paise × quantity)` per space. No engine call needed. **Consequence:** The preview total will NOT match the sealed quotation total — this is intentional. Seal uses cost+25% margin (producing e.g. ₹49,106.35 for the 3-space fixture); preview uses independently-set sell prices (producing a different number). The preview is an approximation for mid-consultation display, not a legally-binding figure. The sealed quotation is the authoritative customer-facing price. | Two different price representations coexist. A Consultant seeing the preview number change when the formal quotation is generated should expect this — worth a UI note explaining "final price calculated at quotation stage." | Yes |
+
+---
+
 ## Cross-AD Interactions (reviewed end-to-end after Sprint 1 completion)
 
 Checked for contradictions or unintended coupling between all 18 decisions:
@@ -132,10 +145,105 @@ Recommended next steps (before Sprint 5):
 
 ---
 
+## Sprint 5 Frozen Regression Values (T7 — Gate 1)
+
+### Quotation Engine Output (deterministic, reproducible)
+
+These values MUST be reproduced by any correct implementation of the 13-step engine
+given the 3-space regression fixture (same as Sprint 4's configuration engine fixture).
+
+| Value | Frozen | Test file |
+|---|---|---|
+| `grand_total_paise` | **4,910,635** | `packages/quotation-engine/tests/regression-fixture.test.ts` |
+| `step_4_wall_panel_total_paise` | 1,272,000 | same |
+| `step_5_trim_total_paise` | 528,544 | same |
+| `step_5_consumable_total_paise` | 567,000 | same |
+| `step_5_non_panel_total_paise` | 1,095,544 | same |
+| `step_8_labour_total_paise` | 461,700 | same |
+| `step_9_transport_paise` | 500,000 | same |
+| `step_10_furniture_total_paise` | 0 | same |
+| `step_11_subtotal_paise` | 3,329,244 | same |
+| `step_12_margin_paise` | 832,311 | same |
+| `step_12_pre_gst_total_paise` | 4,161,555 | same |
+| `step_13_gst_paise` | 749,080 | same |
+
+### Seal Function Determinism (guards logic stability)
+
+This hash guards that `computeQuotationSeal`'s canonicalization + hashing logic hasn't
+changed. It is computed from a FIXED fixture input (dummy UUIDs + fixed timestamp).
+It is NOT the "production Gate value" — production seals use real project_id/snapshot_id
+that vary per run. The production-equivalent proof is T5's live round-trip test.
+
+| Value | Frozen | Fixture input |
+|---|---|---|
+| `sha256_hash` (T3 fixture) | **`7a24f5dd2f956f8f78797bb08beaead47e76f8ed49a7e97a599bb3937e06731a`** | project_id='aaaaaaaa-...', snapshot_id='11111111-...', generated_at='2026-07-20T10:30:00.000Z' |
+
+### T5 Live Execution Evidence (documented, not a frozen regression value)
+
+This hash was produced by persisting a real quotation to demfvizmxkuxvluopmtq,
+reading back the JSONB seal_payload (keys reordered by Postgres), re-canonicalizing,
+and independently SHA-256'ing. It proves the full system works end-to-end but is
+NOT a regression guard (it depends on runtime-generated snapshot_id and timestamp).
+
+| Value | Evidence |
+|---|---|
+| `sha256_hash` (T5 live) | `acc500909e853a351d5ef5d624c254d976db97a782b8a21cceda972e0fa0a135` |
+| `snapshot_id` | `409fb621-b6f6-4d1f-9ca6-d56bf3ec9cae` |
+| `project_id` | `d1000000-0000-0000-0000-000000000100` |
+
+### Sprint 4 Frozen Values (unchanged, still enforced)
+
+| Value | Frozen | Notes |
+|---|---|---|
+| Space 1 `configuration_hash` | `f8156a7e77a3f6dd0ec3df6b4bb9be6ed811ec488d2f9c904d5618d11ed7810e` | 145 tests guard this |
+| Space 2 `configuration_hash` | `b47529d208a49638c7191a3d5fef23ff3bf6133a3d716ef0043be5d351bbaa25` | same |
+| Space 3 `configuration_hash` | `3022c37285ec55dc14f4a9c2fce6ac113c6f903fbaf1776e550a07cd177ca202` | same |
+
+---
+
+## Sprint 5 Cross-AD Interaction Check (end-of-sprint re-read)
+
+Checked for contradictions or unintended coupling between AD-28 through AD-32 and existing decisions:
+
+- **AD-29 × AD-31:** Directly coupled and intentional. AD-29 says use `unit_cost_paise`; AD-31 says `Math.round(quantity × unit_cost_paise)` per line. Together they produce the frozen `grand_total_paise = 4,910,635`. Changing either requires re-baselining.
+- **AD-30 × AD-31:** Compatible. AD-30 defines WHICH round function (`Math.round`); AD-31 defines WHERE it's applied (per-line at Steps 4/5/8, plus explicitly at Steps 12/13). No conflict — AD-31 extends AD-30's application, doesn't contradict it.
+- **AD-28 × AD-32:** Complementary. AD-28 says "plain SHA-256, independently auditable"; AD-32 says "must re-canonicalize JSONB before hashing." Together they define the complete verification path. AD-32 is the implementation detail that makes AD-28's promise actually hold after a Postgres round-trip.
+- **AD-25 × seal_payload:** No conflict. AD-25 sorts arrays before hashing (Sprint 4's `line_items[]`, `furniture[]` in ConfigHashInput). The quotation seal's `seal_payload` contains NO arrays — only flat objects and nested objects whose keys are sorted by canonicalization. AD-25's discipline doesn't apply to the seal; AD-32's re-canonicalization applies instead.
+- **AD-25 × bom_lines:** `bom_lines` are persisted as individual table rows (not hashed into the seal). Their insertion order doesn't affect the seal. The seal covers `step_breakdown` (aggregated totals), not individual line integrity. This is by design: the seal proves the total; line-level integrity is protected by FK constraints (each bom_line references a specific sealed snapshot_id).
+- **AD-28 × AD-17 (encryption keys):** No conflict. AD-17 applies to low-entropy PII (mobile numbers). AD-28 applies to high-entropy quotation data. Different threat models, different mechanisms (HMAC for PII, plain SHA-256 for audit). If quotation seal ever needs forgery-resistance, AD-28 documents the upgrade path (HMAC with managed key).
+- **AD-27 × Sprint 5 RPCs:** Confirmed. `submit_review_gate`, `persist_quotation_snapshot`, `expire_quotation_snapshot` are all in `public` schema with SECURITY DEFINER + SET search_path. Consistent with AD-27.
+- **AD-11 × Sprint 5 RPCs:** Confirmed. All three new RPCs have `GRANT EXECUTE TO authenticated, service_role`.
+
+**Sprint 5 Spec-Interpretation items resolved:**
+- SI-5: unit_cost_paise (AD-29) — confirmed by Akshay
+- SI-7/8: Math.round half-up (AD-30) — confirmed by Akshay
+- SI-9: Per-line integer rounding (AD-31) — confirmed by Akshay
+
+**Sprint 7 Cross-AD Interaction Check (end-of-sprint re-read):**
+
+- **AD-27 × Sprint 7 RPCs:** Confirmed. `transition_project_status`, `schedule_installation`, `complete_installation`, `request_reschedule`, `approve_reschedule`, `reject_reschedule` — all in `public` schema with SECURITY DEFINER + SET search_path = public. Consistent with AD-27.
+- **AD-11 × Sprint 7 RPCs:** Confirmed. All 6 new RPCs have `GRANT EXECUTE TO authenticated, service_role` (or `service_role` only for customer-facing `request_reschedule`).
+- **Part 15 notification polymorphism × Sprint 7:** Sprint 7 notifications target only `users` rows (consultant_id, manager_id). Zero notifications target `customer_accounts`. Option A (magic link) means customer notifications are WhatsApp-based, completely outside the `notifications` table. The Part 15 polymorphism concern is not triggered by Sprint 7 — the current `users`-only FK is safe for all Sprint 7 flows.
+- **Part 15 notification column shapes × Sprint 7:** All Sprint 7 notification inserts use `(recipient_id, type, message)` — exactly the columns deployed. No dependency on columns that don't exist.
+- **WF-6 Regenerate Rule × AD-19 (atomicity):** `regenerate` inserts a new row rather than updating the FAILED row. This allows the FAILED row to remain for audit trail, consistent with the "append-only audit log" principle. The partial unique index `one_active_package_per_project` ensures at most one GENERATING/READY at any time.
+- **complete_installation atomicity:** project.status → CLOSED and installation_schedules.status → COMPLETED happen in a single RPC transaction. If either fails, both roll back — no half-closed state possible. Consistent with AD-19's "wrap multi-step writes that can leave worse-than-either state".
+
+No contradictions found. No reversals needed.
+
+No contradictions found. No reversals needed.
+
+---
+
 ## Pending (Future Sprints)
 
 _Decisions that are expected to be needed but haven't been made yet._
 
+- **Sprint 5 (T10):** Price-preview endpoint — **RESOLVED (AD-33): uses `sell_price_paise` directly.**
+  Akshay confirmed: T10 uses `Σ(configuration_line_items.sell_price_paise × quantity)` for quick
+  Consultant display. It does NOT run the formal 13-step engine. The two systems are deliberately
+  separate: the sealed quotation uses `unit_cost_paise + 25% margin` (AD-29), while the preview
+  uses `sell_price_paise` (Admin-set per-SKU). They will produce different numbers — this is
+  intentional (sell prices are independently set, not derived from cost+margin).
 - **Sprint 3:** `payment_method_enum` — whether to add `NET_BANKING`/`EMI` (Part 15, item 7)
 - **Sprint 4:** Stage 4 resubmission after downstream data exists — **RESOLVED in Sprint 4 T0:**
   `replace_project_spaces` RPC now checks for child rows before DELETE. If any
@@ -151,3 +259,19 @@ _Decisions that are expected to be needed but haven't been made yet._
   but confusing to the customer. The convert flow must not leave this column NULL.
   T4 already handles this gracefully (distinct error code + audit log), but prevention
   is better than detection.
+
+
+---
+
+## Phase 2/3 Decisions (Verification Pass)
+
+| ID | Decision | Rationale | Trade-off | Frozen? |
+|---|---|---|---|---|
+| AD-34 | Role-based notifications ("notify all admins") deferred — template submit and unpublish are silent for MVP | `notifications.recipient_id` is FK → `users` (single UUID). "All admins" requires querying user IDs by role first, which current notification architecture doesn't support without a helper query or broadcast table. Rather than paper over with a single arbitrary admin ID (which would be a third instance of the same polymorphism bug from Sprint 7), the notification inserts for submit-review and emergency-unpublish are removed entirely. Templates appear in the review queue regardless — Admin discovery path is polling, not push. | Templates submitted for review generate no push notification. Admin must check review queue manually (or via scheduled polling). This is an operational gap, not a data integrity gap — same category as AD-21's "visible" test: the state change is discoverable through queue views. **Resolution path:** either (a) add a helper that queries all admin user IDs and inserts N notifications, or (b) add a `notification_broadcasts` table with recipient_role semantics (Part 15 item 5). Either approach is post-MVP. | Yes |
+| AD-35 | GLB upload is metadata-only — client uploads to Storage, Edge Function registers the `digital_assets` row | Supabase Edge Functions have a 2MB request body limit and no native multipart parsing. Storage SDK handles chunked uploads, resumability, and direct-to-bucket auth from the client. The Edge Function endpoint (`POST /:id/glb`) only records metadata (s3_key, asset_type) and deactivates previous assets of the same type. **Frontend handoff documented at:** `.kiro/steering/glb-upload-handoff.md`. | If frontend doesn't call the registration endpoint after upload, the GLB file exists in Storage but Check 2 (10-point validation) fails — the template can't be submitted for review. This is fail-safe (blocks bad state) but requires correct frontend implementation. The backend does NOT verify that the file actually exists at the `s3_key` — trusting the client. Post-MVP: add Storage.exists() check. | Yes |
+
+
+| AD-36 | GLB asset lifecycle is 2-state (active/inactive) for MVP — not the 8-state design-approval workflow | `digital_assets` table has only `is_active` (boolean). No status column, no approval workflow, no hash/checksum verification, no versioning. The 10-point validation Check 2 verifies existence only (`is_active=true` GLB + RENDER exist). Stage 5's GLB gate does the same binary check. **What this means:** any Designer can register any `s3_key` as a GLB and it immediately becomes the active asset — no Admin approval, no file integrity verification. **Why this is acceptable for MVP:** (1) Designers are trusted staff, not external users. (2) The template lifecycle itself requires Admin approval (DRAFT→READY_FOR_REVIEW→PUBLISHED) — a bad GLB would be caught during the Admin review step, not at upload time. (3) Hash enforcement would require reading the file at registration time (Storage API call), adding latency and complexity with no demonstrated attack surface. **When to revisit:** if Designers are ever external contractors, or if GLB corruption causes customer-visible issues in the Three.js viewer post-publish. At that point, add: `file_hash` column, `approval_status` enum, Admin approval step before `is_active` flips. | No file integrity guarantee at upload time. A corrupt or wrong GLB can be registered and will pass Check 2. Caught at Admin publish review (human gate), not automated. | Yes |
+
+
+| AD-37 | DPDP email encryption uses same pattern as mobile (AD-17): AES-256-GCM + HMAC-SHA256, separate key pair | `EMAIL_ENCRYPTION_KEY` + `EMAIL_HASH_KEY` (both 64-char hex, generated with `openssl rand -hex 32`). Stored in Supabase secrets, never in code. Email normalized to lowercase+trim before hashing (case-insensitive dedup). **Migration path:** Phase A (columns added, nullable, dual-write on new records), Phase B (data migration encrypts existing plaintext), Phase C (cutover: drop plaintext columns, make encrypted NOT NULL). Currently at Phase A. **Why separate keys from mobile:** different rotation implications, defense-in-depth (compromise of one key type doesn't expose the other data type). **DPDP justification:** email is classified as personal data under India's Digital Personal Data Protection Act 2023. Plaintext storage in the database represents a compliance risk if the DB is breached. Encryption at rest ensures emails are only accessible to Edge Functions holding the key. | Four new secrets to manage (EMAIL_ENCRYPTION_KEY, EMAIL_HASH_KEY + existing MOBILE_*). No key rotation path for MVP (same as mobile — documented, not solved). Phase B/C data migration not yet built (requires a one-time script to encrypt existing rows). | Yes |
