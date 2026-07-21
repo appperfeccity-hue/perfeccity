@@ -259,3 +259,13 @@ _Decisions that are expected to be needed but haven't been made yet._
   but confusing to the customer. The convert flow must not leave this column NULL.
   T4 already handles this gracefully (distinct error code + audit log), but prevention
   is better than detection.
+
+
+---
+
+## Phase 2/3 Decisions (Verification Pass)
+
+| ID | Decision | Rationale | Trade-off | Frozen? |
+|---|---|---|---|---|
+| AD-34 | Role-based notifications ("notify all admins") deferred — template submit and unpublish are silent for MVP | `notifications.recipient_id` is FK → `users` (single UUID). "All admins" requires querying user IDs by role first, which current notification architecture doesn't support without a helper query or broadcast table. Rather than paper over with a single arbitrary admin ID (which would be a third instance of the same polymorphism bug from Sprint 7), the notification inserts for submit-review and emergency-unpublish are removed entirely. Templates appear in the review queue regardless — Admin discovery path is polling, not push. | Templates submitted for review generate no push notification. Admin must check review queue manually (or via scheduled polling). This is an operational gap, not a data integrity gap — same category as AD-21's "visible" test: the state change is discoverable through queue views. **Resolution path:** either (a) add a helper that queries all admin user IDs and inserts N notifications, or (b) add a `notification_broadcasts` table with recipient_role semantics (Part 15 item 5). Either approach is post-MVP. | Yes |
+| AD-35 | GLB upload is metadata-only — client uploads to Storage, Edge Function registers the `digital_assets` row | Supabase Edge Functions have a 2MB request body limit and no native multipart parsing. Storage SDK handles chunked uploads, resumability, and direct-to-bucket auth from the client. The Edge Function endpoint (`POST /:id/glb`) only records metadata (s3_key, asset_type) and deactivates previous assets of the same type. **Frontend handoff documented at:** `.kiro/steering/glb-upload-handoff.md`. | If frontend doesn't call the registration endpoint after upload, the GLB file exists in Storage but Check 2 (10-point validation) fails — the template can't be submitted for review. This is fail-safe (blocks bad state) but requires correct frontend implementation. The backend does NOT verify that the file actually exists at the `s3_key` — trusting the client. Post-MVP: add Storage.exists() check. | Yes |
