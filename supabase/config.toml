@@ -1,8 +1,12 @@
 # PERFECCITY MVP — Supabase configuration
 # See: https://supabase.com/docs/guides/cli/config
 
-[project]
-id = "perfeccity-mvp"
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
 
 [db]
 port = 54322
@@ -42,7 +46,7 @@ enable_confirmations = false
 # For hosted environments, this must ALSO be configured in Dashboard → Auth → Hooks.
 [auth.hook.custom_access_token]
 enabled = true
-uri = "pg-functions://postgres/auth/custom_access_token_hook"
+uri = "pg-functions://postgres/public/custom_access_token_hook"
 
 [storage]
 enabled = true

@@ -10,21 +10,22 @@
 -- Without registration, tokens silently lack the role claim and ALL RLS
 -- policies that call auth.user_role() will deny access.
 --
--- Security notes:
--- - SECURITY DEFINER: runs as function owner (bypasses RLS on public.users lookup)
--- - SET search_path = auth, public: prevents schema-injection privilege escalation
--- - GRANT to supabase_auth_admin: the specific role Supabase Auth uses to invoke hooks
+-- Security notes (AD-27):
+-- - NO SECURITY DEFINER on hook functions (Supabase docs explicitly recommend against it)
+-- - Function runs as supabase_auth_admin (the invoker role), not as postgres
+-- - GRANT EXECUTE to supabase_auth_admin: required for the hook to be callable
+-- - GRANT SELECT ON public.users to supabase_auth_admin: required for the user lookup
+-- - REVOKE EXECUTE FROM authenticated, anon, public: hook not accessible via REST API
+-- - SET search_path removed: not needed without SECURITY DEFINER
 --
 -- Behavior:
 -- - If user_id is found in public.users → injects that row's role
 -- - If NOT found (customer_accounts flow) → injects 'CUSTOMER'
 -- - This means customer_accounts users don't need a public.users row
 
-CREATE OR REPLACE FUNCTION auth.custom_access_token_hook(event JSONB)
+CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = auth, public
 AS $$
 DECLARE
   _user_role TEXT;
@@ -57,12 +58,19 @@ $$;
 -- REQUIRED: Grant execute to supabase_auth_admin — this is the role that
 -- Supabase Auth's internal machinery uses to call hook functions.
 -- Without this grant, the hook is registered but silently fails to execute.
-GRANT EXECUTE ON FUNCTION auth.custom_access_token_hook TO supabase_auth_admin;
+GRANT EXECUTE ON FUNCTION public.custom_access_token_hook TO supabase_auth_admin;
 
 -- Also grant to service_role for testing/debugging from Edge Functions
-GRANT EXECUTE ON FUNCTION auth.custom_access_token_hook TO service_role;
+GRANT EXECUTE ON FUNCTION public.custom_access_token_hook TO service_role;
 
 -- Grant usage on the public schema to supabase_auth_admin so the function
 -- can read from public.users when invoked by Auth
 GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
 GRANT SELECT ON TABLE public.users TO supabase_auth_admin;
+
+-- AD-27: Revoke from authenticated/anon (hook not accessible via REST API)
+REVOKE EXECUTE ON FUNCTION public.custom_access_token_hook FROM authenticated, anon, public;
+
+-- AD-27: RLS policy allowing supabase_auth_admin to read users table
+CREATE POLICY allow_auth_admin_to_read_users ON public.users
+  AS PERMISSIVE FOR SELECT TO supabase_auth_admin USING (true);
