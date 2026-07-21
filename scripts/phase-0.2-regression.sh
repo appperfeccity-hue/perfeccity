@@ -18,15 +18,16 @@ echo ""
 
 # Ensure packages are installed
 echo "--- Installing dependencies ---"
-cd packages/config-engine && npm install --silent 2>/dev/null
-cd ../quotation-engine && npm install --silent 2>/dev/null
-cd ../..
+(cd packages/config-engine && npm install --silent 2>/dev/null)
+(cd packages/quotation-engine && npm install --silent 2>/dev/null)
+
+# Unset NODE_OPTIONS in case the environment has proxy/preload configured
+unset NODE_OPTIONS
 
 # Run config engine tests
 echo ""
 echo "--- Config Engine Tests ---"
-cd packages/config-engine
-CONFIG_OUTPUT=$(npx vitest --run 2>&1)
+CONFIG_OUTPUT=$(cd packages/config-engine && npx vitest --run 2>&1)
 CONFIG_RESULT=$?
 CONFIG_TESTS=$(echo "$CONFIG_OUTPUT" | grep "Tests" | tail -1)
 echo "$CONFIG_TESTS"
@@ -37,13 +38,11 @@ if [ $CONFIG_RESULT -ne 0 ]; then
   exit 1
 fi
 echo "✅ Config engine: PASS"
-cd ../..
 
 # Run quotation engine tests
 echo ""
 echo "--- Quotation Engine Tests ---"
-cd packages/quotation-engine
-QUOT_OUTPUT=$(npx vitest --run 2>&1)
+QUOT_OUTPUT=$(cd packages/quotation-engine && npx vitest --run 2>&1)
 QUOT_RESULT=$?
 QUOT_TESTS=$(echo "$QUOT_OUTPUT" | grep "Tests" | tail -1)
 echo "$QUOT_TESTS"
@@ -54,7 +53,6 @@ if [ $QUOT_RESULT -ne 0 ]; then
   exit 1
 fi
 echo "✅ Quotation engine: PASS"
-cd ../..
 
 # Verify frozen hashes are unchanged
 echo ""

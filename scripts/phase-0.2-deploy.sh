@@ -25,6 +25,22 @@ echo "Project: $PROJECT_REF"
 echo "Source: $FUNCTIONS_DIR"
 echo ""
 
+# Guard: working tree must be clean (no uncommitted edits, no stale artifacts)
+# This is what makes "CLI deploy = source identity" actually true.
+DIRTY=$(git status --porcelain 2>/dev/null)
+if [ -n "$DIRTY" ]; then
+  echo "❌ ABORT: Working tree is not clean. Uncommitted changes detected:"
+  echo "$DIRTY"
+  echo ""
+  echo "Phase 0.2 must run against a clean checkout of the certified commit."
+  echo "Either commit/stash your changes, or run from a fresh 'git clone'."
+  exit 1
+fi
+
+CURRENT_COMMIT=$(git rev-parse --short HEAD)
+echo "Commit: $CURRENT_COMMIT (verified clean)"
+echo ""
+
 # List of all deployable functions (api-design-library excluded — no index.ts)
 FUNCTIONS=(
   "api-auth-login"
