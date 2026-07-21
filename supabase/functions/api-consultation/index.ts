@@ -20,6 +20,8 @@ import { handleStage4 } from './stage-4.ts';
 import { handleSelectTemplate, handleVerifySamples } from './stage-5.ts';
 import { handleStage6 } from './stage-6.ts';
 import { handleProgress } from './progress.ts';
+import { handleRunRecommendation, handleGetRecommendation } from './recommendation.ts';
+import { handleListFurniture, handleAddFurniture, handleRemoveFurniture } from './furniture.ts';
 
 serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -40,6 +42,44 @@ serve(async (req: Request) => {
     // Route: GET .../progress
     if (method === 'GET' && url.pathname.includes('/progress')) {
       return await handleProgress(admin, projectId, rbac.auth);
+    }
+
+    // Route: POST .../spaces/:space_id/recommendation (Stage 5a — run engine)
+    if (method === 'POST' && url.pathname.includes('/recommendation')) {
+      const spaceId = extractSpaceId(url.pathname);
+      if (!spaceId) return error('BAD_REQUEST', 'Space ID required in path', 400);
+      return await handleRunRecommendation(admin, projectId, spaceId, rbac.auth);
+    }
+
+    // Route: GET .../spaces/:space_id/recommendation (read cached)
+    if (method === 'GET' && url.pathname.includes('/recommendation')) {
+      const spaceId = extractSpaceId(url.pathname);
+      if (!spaceId) return error('BAD_REQUEST', 'Space ID required in path', 400);
+      return await handleGetRecommendation(admin, projectId, spaceId, rbac.auth);
+    }
+
+    // Route: GET .../spaces/:space_id/furniture (list)
+    if (method === 'GET' && url.pathname.includes('/furniture')) {
+      const spaceId = extractSpaceId(url.pathname);
+      if (!spaceId) return error('BAD_REQUEST', 'Space ID required in path', 400);
+      return await handleListFurniture(admin, projectId, spaceId, rbac.auth);
+    }
+
+    // Route: POST .../spaces/:space_id/furniture (add)
+    if (method === 'POST' && url.pathname.includes('/furniture')) {
+      const spaceId = extractSpaceId(url.pathname);
+      if (!spaceId) return error('BAD_REQUEST', 'Space ID required in path', 400);
+      const body = await req.json();
+      return await handleAddFurniture(admin, projectId, spaceId, rbac.auth, body);
+    }
+
+    // Route: DELETE .../spaces/:space_id/furniture/:id (remove)
+    if (method === 'DELETE' && url.pathname.includes('/furniture/')) {
+      const spaceId = extractSpaceId(url.pathname);
+      if (!spaceId) return error('BAD_REQUEST', 'Space ID required in path', 400);
+      const furnitureId = extractFurnitureId(url.pathname);
+      if (!furnitureId) return error('BAD_REQUEST', 'Furniture ID required in path', 400);
+      return await handleRemoveFurniture(admin, projectId, spaceId, furnitureId, rbac.auth);
     }
 
     // Route: POST .../spaces/:space_id/select-template (Stage 5a)
@@ -107,4 +147,11 @@ function extractSpaceId(pathname: string): string | null {
 function extractStageNumber(pathname: string): number | null {
   const match = pathname.match(/stage\/(\d+)/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+function extractFurnitureId(pathname: string): string | null {
+  const match = pathname.match(
+    /furniture\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+  );
+  return match ? match[1] : null;
 }
