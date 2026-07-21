@@ -102,11 +102,14 @@ export async function handleRequestChanges(
 
   // Notification to Designer (best-effort)
   if (template.created_by) {
-    await admin.from('notifications').insert({
+    const { error: notifError } = await admin.from('notifications').insert({
       recipient_id: template.created_by,
       type: 'TEMPLATE_CHANGES_REQUESTED',
       message: `Changes requested on "${template.template_name}": ${body.comment}`,
-    }).then(() => {}).catch(() => {});
+    });
+    if (notifError) {
+      console.error('Non-fatal: request-changes notification failed:', notifError);
+    }
   }
 
   return success({
