@@ -31,6 +31,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { requireAuth } from '../_shared/middleware/rbac.ts';
 import { getAdminClient } from '../_shared/supabase.ts';
 import { success, error, paginated } from '../_shared/response.ts';
+import { encryptEmail, hashEmail } from '../_shared/crypto.ts';
 
 serve(async (req: Request) => {
   const method = req.method;
@@ -126,11 +127,17 @@ async function handleCreate(req: Request, createdBy: string): Promise<Response> 
   const authUserId = authData.user.id;
 
   // Step 2: Insert into public.users with the SAME UUID (AD-2)
+  // DPDP: dual-write — plaintext email (backward compat) + encrypted + hash
+  const emailEncrypted = await encryptEmail(body.email);
+  const emailHash = await hashEmail(body.email);
+
   const { data: userData, error: dbError } = await admin
     .from('users')
     .insert({
       user_id: authUserId, // AD-2: Auth UID = users.user_id
       email: body.email,
+      email_encrypted: emailEncrypted,
+      email_hash: emailHash,
       password_hash: '(managed-by-supabase-auth)', // Sentinel — actual hash is in auth.users
       role: body.role,
       status: 'ACTIVE',

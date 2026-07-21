@@ -20,7 +20,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { requireAuth } from '../_shared/middleware/rbac.ts';
 import { getAdminClient, getUserClient } from '../_shared/supabase.ts';
 import { success, error, paginated } from '../_shared/response.ts';
-import { encryptMobile, decryptMobile, hashMobile } from '../_shared/crypto.ts';
+import { encryptMobile, decryptMobile, hashMobile, encryptEmail, hashEmail } from '../_shared/crypto.ts';
 
 serve(async (req: Request) => {
   const method = req.method;
@@ -108,6 +108,14 @@ async function handleCreate(req: Request): Promise<Response> {
   // Encrypt mobile for storage (AES-256-GCM, key from MOBILE_ENCRYPTION_KEY env var — AD-17)
   const mobileEncrypted = await encryptMobile(body.mobile);
 
+  // DPDP: encrypt email if provided
+  let emailEncrypted: Uint8Array | null = null;
+  let emailHash: string | null = null;
+  if (body.email_address) {
+    emailEncrypted = await encryptEmail(body.email_address);
+    emailHash = await hashEmail(body.email_address);
+  }
+
   // Insert the lead
   const { data: newLead, error: insertError } = await admin
     .from('leads')
@@ -116,6 +124,8 @@ async function handleCreate(req: Request): Promise<Response> {
       mobile_encrypted: Array.from(mobileEncrypted), // bytea as array
       mobile_hash: mobileHash,
       email_address: body.email_address || null,
+      email_encrypted: emailEncrypted ? Array.from(emailEncrypted) : null,
+      email_hash: emailHash,
       project_address: body.project_address || null,
       city: body.city || null,
       project_type: body.project_type || null,
