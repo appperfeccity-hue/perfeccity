@@ -66,6 +66,17 @@ serve(async (req: Request) => {
       return await handlePay(admin, projectId, customerId);
     }
 
+    // Route: GET .../receipt (payment receipt)
+    if (method === 'GET' && url.pathname.includes('/receipt')) {
+      return await handleReceipt(admin, projectId, customerId);
+    }
+
+    // Route: POST .../reschedule (customer reschedule request — WF-8)
+    if (method === 'POST' && url.pathname.includes('/reschedule')) {
+      const body = await req.json();
+      return await handleRescheduleRequest(admin, projectId, customerId, body);
+    }
+
     // Route: GET .../status
     if (method === 'GET' && url.pathname.includes('/status')) {
       return await handleStatus(admin, projectId, customerId);
@@ -442,6 +453,90 @@ async function handleStatus(
       expires_at: snapshot.expires_at,
       status: snapshot.status,
     } : null,
+  });
+}
+
+// ============================================================
+// T10: Payment Receipt
+// ============================================================
+
+async function handleReceipt(
+  admin: SupabaseClient,
+  projectId: string,
+  _customerId: string
+): Promise<Response> {
+  // Get confirmed payment
+  const { data: payment } = await admin
+    .from('advance_payments')
+    .select('payment_id, amount_paise, method, status, confirmed_at, razorpay_payment_id, razorpay_order_id')
+    .eq('project_id', projectId)
+    .eq('status', 'CONFIRMED')
+    .single();
+
+  if (!payment) {
+    return error('NO_RECEIPT', 'No confirmed payment found for this project', 404);
+  }
+
+  // Get project info
+  const { data: project } = await admin
+    .from('projects')
+    .select('customer_name, project_address, city')
+    .eq('project_id', projectId)
+    .single();
+
+  return success({
+    receipt: {
+      payment_id: payment.payment_id,
+      amount: `₹${(payment.amount_paise / 100).toFixed(2)}`,
+      amount_paise: payment.amount_paise,
+      method: payment.method,
+      confirmed_at: payment.confirmed_at,
+      razorpay_payment_id: payment.razorpay_payment_id,
+      razorpay_order_id: payment.razorpay_order_id,
+    },
+    project: {
+      customer_name: project?.customer_name,
+      address: project?.project_address,
+      city: project?.city,
+    },
+    message: 'Payment receipt',
+  });
+}
+
+// ============================================================
+// Customer Reschedule Request (WF-8)
+// ============================================================
+
+async function handleRescheduleRequest(
+  admin: SupabaseClient,
+  projectId: string,
+  _customerId: string,
+  body: { reason?: string; preferred_date?: string }
+): Promise<Response> {
+  if (!body.reason) {
+    return error('VALIDATION_ERROR', 'reason is required for reschedule request', 422, 'reason');
+  }
+
+  // Call the request_reschedule RPC (Sprint 7, gate-tested)
+  const { data, error: rpcError } = await admin.rpc('request_reschedule', {
+    p_project_id: projectId,
+    p_reason: body.reason,
+    p_preferred_date: body.preferred_date || null,
+  });
+
+  if (rpcError) {
+    const msg = rpcError.message || '';
+    if (msg.includes('PROJECT_NOT_FOUND')) return error('PROJECT_NOT_FOUND', 'Project not found', 404);
+    if (msg.includes('INVALID_STATUS')) return error('INVALID_STATUS', 'Cannot request reschedule in current status', 422);
+    if (msg.includes('NO_SCHEDULE')) return error('NO_SCHEDULE', 'No installation scheduled yet', 422);
+    return error('DB_ERROR', 'Reschedule request failed: ' + msg, 500);
+  }
+
+  return success({
+    project_id: projectId,
+    status: 'RESCHEDULE_REQUESTED',
+    reason: body.reason,
+    message: 'Reschedule request submitted. Your consultant will contact you.',
   });
 }
 

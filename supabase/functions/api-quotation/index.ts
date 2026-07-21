@@ -43,11 +43,7 @@ serve(async (req: Request) => {
   const url = new URL(req.url);
   const method = req.method;
 
-  if (method !== 'POST') {
-    return error('METHOD_NOT_ALLOWED', 'Only POST is allowed for quotation generation', 405);
-  }
-
-  const rbac = await requireAuth(req, ['ADMIN', 'SALESPERSON']);
+  const rbac = await requireAuth(req, ['ADMIN', 'SALESPERSON', 'MANAGER']);
   if (!rbac.ok) return rbac.response;
 
   try {
@@ -56,6 +52,22 @@ serve(async (req: Request) => {
 
     if (!projectId) {
       return error('BAD_REQUEST', 'Project ID required in path (/api/v1/projects/:id/quotation)', 400);
+    }
+
+    // GET .../bom-export — CSV download
+    if (method === 'GET' && url.pathname.includes('/bom-export')) {
+      const { handleBomExport } = await import('./bom-export.ts');
+      return await handleBomExport(admin, projectId);
+    }
+
+    // GET .../pdf — Quotation PDF
+    if (method === 'GET' && url.pathname.includes('/pdf')) {
+      const { handleQuotationPdf } = await import('./pdf.ts');
+      return await handleQuotationPdf(admin, projectId);
+    }
+
+    if (method !== 'POST') {
+      return error('METHOD_NOT_ALLOWED', 'Use POST for generation, GET for bom-export/pdf', 405);
     }
 
     // -------------------------------------------------------

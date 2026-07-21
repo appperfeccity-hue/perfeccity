@@ -17,6 +17,7 @@ import { requireAuth } from '../_shared/middleware/rbac.ts';
 import { getAdminClient } from '../_shared/supabase.ts';
 import { success, error } from '../_shared/response.ts';
 import { handleDeliveryConfirm, handleInstallationComplete } from './complete.ts';
+import { handleManualPaymentConfirm } from './payment.ts';
 
 serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -41,6 +42,10 @@ serve(async (req: Request) => {
       }
       if (url.pathname.includes('/installation/complete')) {
         return await handleInstallationComplete(admin, projectId, rbac.auth);
+      }
+      if (url.pathname.includes('/payment/confirm-manual')) {
+        const body = await req.json();
+        return await handleManualPaymentConfirm(admin, projectId, rbac.auth, body);
       }
       return error('BAD_REQUEST', 'Unknown POST route', 400);
     }
